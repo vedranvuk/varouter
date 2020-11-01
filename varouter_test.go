@@ -611,5 +611,5 @@ func ExampleVarouter() {
 
 	templates, params, matched := vr.Match("/home/users/vedran/.config")
 	fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-	// Output: Templates: '[/* /home/users/:username/* /home/users/:username/*]', Params: 'map[username:vedran]', Matched: 'true'
+	// Output: Templates: '[/* /home/users/:username/*]', Params: 'map[username:vedran]', Matched: 'true'
 }

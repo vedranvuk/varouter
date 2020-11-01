@@ -20,7 +20,7 @@ vr.Register("/home/users/:username/*")
 templates, params, matched := vr.Match("/home/users/vedran/.config")
 
 fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-// Output: Templates: '[/* /home/users/:username/* /home/users/:username/*]', Params: 'map[username:vedran]', Matched: 'true'
+// Output: Templates: '[/* /home/users/:username/*]', Params: 'map[username:vedran]', Matched: 'true'
 ```
 
 ## Status
@@ -30,7 +30,7 @@ Work in progress.
 * API is fixed, only additions possible. 
 * Will add possibility to register multiple wildcards from a single template.
 * Should change default wildcard character to something other than '*' to not interfere with standard wildcards as the're allowed as parts of registered names.
-* Requires further testing.
+* Requires further testing and few bugs to remove.
 
 ## License
 
