@@ -124,7 +124,7 @@ func (vr *Varouter) Register(template string) (err error) {
 }
 
 // getOrAddSub is a helper to Register that gets a sub element by name or adds
-// one if it does not existing respecting the element type in the process.
+// one if it does not exist respecting the element type in the process.
 func (vr *Varouter) getOrAddSub(elem *element, name string, wildcard bool) (e *element, err error) {
 	var container bool = len(name) > 1 && name[1] == vr.Placeholder
 	if container {
@@ -181,7 +181,7 @@ func (vr *Varouter) Match(path string) (templates []string, params PlaceholderMa
 		}
 		marker = cursor
 	}
-	matched = len(templates) > 0 || params != nil
+	matched = len(templates) > 0
 	if current = vr.get(current, path[marker:cursor], &templates, &params); current == nil && !matched {
 		return nil, nil, false
 	}
