@@ -181,12 +181,18 @@ func (vr *Varouter) Match(path string) (templates []string, params PlaceholderMa
 		}
 		marker = cursor
 	}
-	matched = len(templates) > 0
+	matched = len(templates) > 0 || params != nil
 	if current = vr.get(current, path[marker:cursor], &templates, &params); current == nil && !matched {
 		return nil, nil, false
 	}
 	if cursor == length && current != nil && current.template != "" {
-		templates = append(templates, current.template)
+		if len(templates) > 0 {
+			if templates[len(templates)-1] != current.template {
+				templates = append(templates, current.template)
+			}
+		} else {
+			templates = append(templates, current.template)
+		}
 		matched = true
 	}
 	return
@@ -203,13 +209,12 @@ func (vr *Varouter) get(elem *element, name string, templates *[]string, params 
 		(*params)[elem.container] = name[1:]
 		return
 	}
-	var ok bool
 	if elem.wildcard {
 		e = elem.subs[string([]byte{vr.Separator, vr.Wildcard})]
 		*templates = append(*templates, e.template)
-		ok = true
 	}
 	var save *element
+	var ok bool
 	if save, ok = elem.subs[name]; ok {
 		return save
 	}
