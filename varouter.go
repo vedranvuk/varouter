@@ -105,11 +105,16 @@ func NewVarouter(override, separator, placeholder, wildcard byte) *Varouter {
 // "/edit/:user" and "/export/:user" is allowed but
 // "/edit/:user" and "/edit/:admin" is not.
 func (vr *Varouter) Register(template string) (err error) {
+	var override bool
 	var wildcard bool
 	var current *element = vr.root
 	var cursor, marker, length int = 0, 0, len(template)
 	if length == 0 {
 		return errors.New("varouter: empty path")
+	}
+	if template[0] == vr.override {
+		template = template[1:]
+		override = true
 	}
 	if template[0] != vr.separator {
 		return errors.New("varouter: path must start with a separator")
@@ -131,6 +136,7 @@ func (vr *Varouter) Register(template string) (err error) {
 		return
 	}
 	current.template = template
+	current.override = override
 	return nil
 }
 
