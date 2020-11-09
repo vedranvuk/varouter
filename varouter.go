@@ -49,10 +49,10 @@ type Varouter struct {
 	count int      // count is the number of registered templates.
 	root  *element // root is the root element.
 
-	Override    byte // Override is the override character to use. (Default '!').
-	Separator   byte // Separator is the path separator character to use. (Default '/').
-	Placeholder byte // Placeholder is the variable placeholder character to use. Default (':').
-	Wildcard    byte // Wildcard is the wildcard character to use. Default: ('+').
+	override    byte // Override is the override character to use. (Default '!').
+	separator   byte // Separator is the path separator character to use. (Default '/').
+	placeholder byte // Placeholder is the variable placeholder character to use. Default (':').
+	wildcard    byte // Wildcard is the wildcard character to use. Default: ('+').
 }
 
 // New returns a new *Varouter instance with default configuration.
@@ -63,10 +63,10 @@ func New() *Varouter { return NewVarouter('!', '/', ':', '+') }
 func NewVarouter(override, separator, placeholder, wildcard byte) *Varouter {
 	return &Varouter{
 		root:        newElement(),
-		Override:    override,
-		Separator:   separator,
-		Placeholder: placeholder,
-		Wildcard:    wildcard,
+		override:    override,
+		separator:   separator,
+		placeholder: placeholder,
+		wildcard:    wildcard,
 	}
 }
 
@@ -111,15 +111,15 @@ func (vr *Varouter) Register(template string) (err error) {
 	if length == 0 {
 		return errors.New("varouter: empty path")
 	}
-	if template[0] != vr.Separator {
+	if template[0] != vr.separator {
 		return errors.New("varouter: path must start with a separator")
 	}
-	if length > 1 && template[length-1] == vr.Wildcard && template[length-2] == vr.Separator {
+	if length > 1 && template[length-1] == vr.wildcard && template[length-2] == vr.separator {
 		length--
 		wildcard = true
 	}
 	for cursor, marker = 1, 0; cursor < length; cursor++ {
-		if template[cursor] != vr.Separator {
+		if template[cursor] != vr.separator {
 			continue
 		}
 		if current, err = vr.getOrAddSub(current, template[marker:cursor], false); err != nil {
@@ -137,7 +137,7 @@ func (vr *Varouter) Register(template string) (err error) {
 // getOrAddSub is a helper to Register that gets a sub element by name or adds
 // one if it does not exist respecting the element type in the process.
 func (vr *Varouter) getOrAddSub(elem *element, name string, wildcard bool) (e *element, err error) {
-	var container bool = len(name) > 1 && name[1] == vr.Placeholder
+	var container bool = len(name) > 1 && name[1] == vr.placeholder
 	if container {
 		name = name[2:]
 	}
@@ -154,7 +154,7 @@ func (vr *Varouter) getOrAddSub(elem *element, name string, wildcard bool) (e *e
 	e = newElement()
 	if wildcard {
 		elem.wildcard = true
-		elem.subs[name+string(vr.Wildcard)] = e
+		elem.subs[name+string(vr.wildcard)] = e
 	} else {
 		elem.subs[name] = e
 	}
@@ -184,7 +184,7 @@ func (vr *Varouter) Match(path string) (templates []string, params PlaceholderMa
 	var length int = len(path)
 	var current *element = vr.root
 	for cursor, marker = 1, 0; cursor < length; cursor++ {
-		if path[cursor] != vr.Separator {
+		if path[cursor] != vr.separator {
 			continue
 		}
 		if current = vr.get(current, path[marker:cursor], &templates, &params); current == nil {
@@ -221,7 +221,7 @@ func (vr *Varouter) get(elem *element, name string, templates *[]string, params 
 		return
 	}
 	if elem.wildcard {
-		e = elem.subs[string([]byte{vr.Separator, vr.Wildcard})]
+		e = elem.subs[string([]byte{vr.separator, vr.wildcard})]
 		*templates = append(*templates, e.template)
 	}
 	var save *element
