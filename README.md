@@ -27,7 +27,6 @@ fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, 
 
 * Relaxed over Restrictive. Tries to be maximally flexible in the smallest package and API possible.
 * Parse tokens are configurable in hope of broadening package use cases.
-* Matches are optionally case-sensitive.
 * Matches are matched exactly but wildcards can be specified in which case multiple matches are possible.
 * Overrides can be defined to force single matches.
 
