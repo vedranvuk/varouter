@@ -18,6 +18,8 @@ type elementMap map[string]*element
 type element struct {
 	// subs is a map of sub path elements.
 	subs elementMap
+	// override specifies if this element is an override element.
+	override bool
 	// wildcard specifies if this element contains a wildcard element.
 	wildcard bool
 	// template is the template string that registered this element.
@@ -47,19 +49,21 @@ type Varouter struct {
 	count int      // count is the number of registered templates.
 	root  *element // root is the root element.
 
+	Override    byte // Override is the override character to use. (Default '!').
 	Separator   byte // Separator is the path separator character to use. (Default '/').
 	Placeholder byte // Placeholder is the variable placeholder character to use. Default (':').
-	Wildcard    byte // Wildcard is the wildcard character to use. Default: ('*').
+	Wildcard    byte // Wildcard is the wildcard character to use. Default: ('+').
 }
 
 // New returns a new *Varouter instance with default configuration.
-func New() *Varouter { return NewVarouter('/', ':', '*') }
+func New() *Varouter { return NewVarouter('!', '/', ':', '+') }
 
-// NewVarouter returns a new *Varouter instance with the given separator,
-// placeholder and wildcard.
-func NewVarouter(separator, placeholder, wildcard byte) *Varouter {
+// NewVarouter returns a new *Varouter instance with the given override,
+// separator, placeholder and wildcard character.
+func NewVarouter(override, separator, placeholder, wildcard byte) *Varouter {
 	return &Varouter{
 		root:        newElement(),
+		Override:    override,
 		Separator:   separator,
 		Placeholder: placeholder,
 		Wildcard:    wildcard,
@@ -78,16 +82,23 @@ func NewVarouter(separator, placeholder, wildcard byte) *Varouter {
 //
 // A Wildcard template which will match a path if it is prefixed by it can be
 // defined by adding a Wildcard character suffix to the template where the
-// suffix appears as if instead of a name, e.g. "/home/users/*".
+// suffix appears as if instead of a name, e.g. "/home/users/+".
 //
 // Wildcard characters as part of the path element name are legal and registered
 // as is and are left to be interpreted by the user. For example:
-// "/usr/lib*", "/usr/lib*/bash", "/tests/*_test.go", "/home/users/*/.config".
+// "/usr/lib+", "/usr/lib+/bash", "/tests/+_test.go", "/home/users/+/.config".
 //
 // Template path elements can be defined as Placeholders by prefixing the path
 // element with a Placeholder which matches the whole path element as a value
 // of the named path element and are returned as a map. For example:
 // "/home/users/:user", "/:item/:action/", "/movies/:id/comments/".
+//
+// Templates can be defined as overrides by prefixing the template with the
+// override character. This forces Match to return only one template regardless
+// if the path matches multiple templates and it will be an override template.
+// If more than one override templates Match a path, the override template with
+// the longest prefix wins. More specific matches of templates that are not
+// overrides after a matched override template are not considered.
 //
 // Only one Placeholder per registered template tree path element level is
 // allowed. For example:

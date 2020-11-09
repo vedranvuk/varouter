@@ -307,10 +307,10 @@ Got:
 var MatchWildcardTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
-			"/users/*",
-			"/us***/*",
-			"/users/*/.config/*",
-			"/users/*/.config/*nope",
+			"/users/+",
+			"/us+++/+",
+			"/users/+/.config/+",
+			"/users/+/.config/+nope",
 		},
 		Matches: []Match{
 			{
@@ -321,39 +321,39 @@ var MatchWildcardTests = []MatchTest{
 			},
 			{
 				Path:                 "/users/",
-				ExpectedPatterns:     []string{"/users/*"},
+				ExpectedPatterns:     []string{"/users/+"},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
 			{
 				Path:                 "/users/vedran",
-				ExpectedPatterns:     []string{"/users/*"},
+				ExpectedPatterns:     []string{"/users/+"},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
 			{
 				Path:                 "/users/vedran/",
-				ExpectedPatterns:     []string{"/users/*"},
+				ExpectedPatterns:     []string{"/users/+"},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
 			{
 				Path:                 "/users/vedran/.config",
-				ExpectedPatterns:     []string{"/users/*"},
+				ExpectedPatterns:     []string{"/users/+"},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
 			{
 				Path:                 "/users/vedran/.config/",
-				ExpectedPatterns:     []string{"/users/*"},
+				ExpectedPatterns:     []string{"/users/+"},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
 			{
 				Path: "/users/vedran/.config/anything",
 				ExpectedPatterns: []string{
-					"/users/*",
-					"/users/*/.config/*",
+					"/users/+",
+					"/users/+/.config/+",
 				},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
@@ -428,12 +428,12 @@ Got:
 var MatchCombinedTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
-			"/home/users/:user/temp/*",
+			"/home/users/:user/temp/+",
 		},
 		Matches: []Match{
 			{
 				Path:                 "/home/users/vedran/temp/file",
-				ExpectedPatterns:     []string{"/home/users/:user/temp/*"},
+				ExpectedPatterns:     []string{"/home/users/:user/temp/+"},
 				ExpectedPlaceholders: PlaceholderMap{"user": "vedran"},
 				ExpectedMatch:        true,
 			},
@@ -606,10 +606,10 @@ func BenchmarkMatch_64ElemNumX8Namelen(b *testing.B) {
 
 func ExampleVarouter() {
 	vr := New()
-	vr.Register("/*")
-	vr.Register("/home/users/:username/*")
+	vr.Register("/+")
+	vr.Register("/home/users/:username/+")
 
 	templates, params, matched := vr.Match("/home/users/vedran/.config")
 	fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-	// Output: Templates: '[/* /home/users/:username/*]', Params: 'map[username:vedran]', Matched: 'true'
+	// Output: Templates: '[/+ /home/users/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
 }
