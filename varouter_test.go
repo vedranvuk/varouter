@@ -575,9 +575,9 @@ func BenchmarkMatch_64ElemNumX8Namelen(b *testing.B) {
 func ExampleVarouter() {
 	vr := New()
 	vr.Register("/+")
-	vr.Register("/home/users/:username/+")
+	vr.Register("/home/:username/+")
 
-	templates, params, matched := vr.Match("/home/users/vedran/.config")
+	templates, params, matched := vr.Match("/home/vedran/.config")
 	fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-	// Output: Templates: '[/+ /home/users/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
+	// Output: Templates: '[/+ /home/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
 }

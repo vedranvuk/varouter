@@ -207,10 +207,8 @@ func (vr *Varouter) Match(path string) (matches []string, params PlaceholderMap,
 		if len(matches) > 0 {
 			if matches[len(matches)-1] != current.template {
 				appendMatches(&matches, &current.template, current.override)
-				// templates = append(templates, current.template)
 			}
 		} else {
-			// templates = append(templates, current.template)
 			appendMatches(&matches, &current.template, current.override)
 		}
 		matched = true
@@ -232,7 +230,6 @@ func (vr *Varouter) get(elem *element, name string, templates *[]string, params 
 	if elem.wildcard {
 		e = elem.subs[string([]byte{vr.separator, vr.wildcard})]
 		appendMatches(templates, &e.template, e.override)
-		// *templates = append(*templates, e.template)
 	}
 	var save *element
 	var ok bool

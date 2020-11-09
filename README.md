@@ -15,12 +15,12 @@ The additional servemux package demonstrates wrapping varouter into a mux compat
 ```Go
 vr := New()
 vr.Register("/+")
-vr.Register("/home/users/:username/+")
+vr.Register("/home/:username/+")
 
-templates, params, matched := vr.Match("/home/users/vedran/.config")
+templates, params, matched := vr.Match("/home/vedran/.config")
 
 fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-// Output: Templates: '[/+ /home/users/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
+// Output: Templates: '[/+ /home/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
 ```
 
 ## Features
@@ -37,7 +37,6 @@ Work in progress.
 
 * API _could_ still change, but really, not by a lot.
 * Will add possibility to register multiple wildcards from a single template.
-* Should change default wildcard character to something other than '*' to not interfere with standard wildcards as the're allowed as parts of registered names.
 * Requires further testing and few bugs to remove.
 
 ## License
