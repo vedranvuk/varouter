@@ -108,22 +108,23 @@ func (vr *Varouter) Register(template string) (err error) {
 	var override bool
 	var wildcard bool
 	var current *element = vr.root
-	var cursor, marker, length int = 0, 0, len(template)
+	var cursor, marker, length int = 1, 0, len(template)
 	if length == 0 {
 		return errors.New("varouter: empty path")
 	}
 	if template[0] == vr.override {
-		template = template[1:]
 		override = true
+		cursor++
+		marker++
 	}
-	if template[0] != vr.separator {
+	if template[marker] != vr.separator {
 		return errors.New("varouter: path must start with a separator")
 	}
 	if length > 1 && template[length-1] == vr.wildcard && template[length-2] == vr.separator {
 		length--
 		wildcard = true
 	}
-	for cursor, marker = 1, 0; cursor < length; cursor++ {
+	for ; cursor < length; cursor++ {
 		if template[cursor] != vr.separator {
 			continue
 		}
@@ -154,7 +155,7 @@ func (vr *Varouter) getOrAddSub(elem *element, name string, wildcard bool) (e *e
 	if elem.container != "" {
 		return nil, errors.New("varouter: only one placeholder allowed per level")
 	}
-	if len(elem.subs) > 0 && container {
+	if len(elem.subs) > 0 && container && !(len(elem.subs) == 1 && elem.wildcard) {
 		return nil, errors.New("varouter: cannot register a placeholder on a path level with defined elements")
 	}
 	e = newElement()
@@ -185,7 +186,7 @@ type PlaceholderMap map[string]string
 //
 // If no templates were matched the resulting templates will be nil.
 // If no params were parsed from the path the resulting ParamMap wil be nil.
-func (vr *Varouter) Match(path string) (templates []string, params PlaceholderMap, matched bool) {
+func (vr *Varouter) Match(path string) (matches []string, params PlaceholderMap, matched bool) {
 	var cursor, marker int
 	var length int = len(path)
 	var current *element = vr.root
@@ -193,22 +194,24 @@ func (vr *Varouter) Match(path string) (templates []string, params PlaceholderMa
 		if path[cursor] != vr.separator {
 			continue
 		}
-		if current = vr.get(current, path[marker:cursor], &templates, &params); current == nil {
+		if current = vr.get(current, path[marker:cursor], &matches, &params); current == nil {
 			return nil, nil, false
 		}
 		marker = cursor
 	}
-	matched = len(templates) > 0
-	if current = vr.get(current, path[marker:cursor], &templates, &params); current == nil && !matched {
+	matched = len(matches) > 0
+	if current = vr.get(current, path[marker:cursor], &matches, &params); current == nil && !matched {
 		return nil, nil, false
 	}
 	if cursor == length && current != nil && current.template != "" {
-		if len(templates) > 0 {
-			if templates[len(templates)-1] != current.template {
-				templates = append(templates, current.template)
+		if len(matches) > 0 {
+			if matches[len(matches)-1] != current.template {
+				appendMatches(&matches, &current.template, current.override)
+				// templates = append(templates, current.template)
 			}
 		} else {
-			templates = append(templates, current.template)
+			// templates = append(templates, current.template)
+			appendMatches(&matches, &current.template, current.override)
 		}
 		matched = true
 	}
@@ -228,7 +231,8 @@ func (vr *Varouter) get(elem *element, name string, templates *[]string, params 
 	}
 	if elem.wildcard {
 		e = elem.subs[string([]byte{vr.separator, vr.wildcard})]
-		*templates = append(*templates, e.template)
+		appendMatches(templates, &e.template, e.override)
+		// *templates = append(*templates, e.template)
 	}
 	var save *element
 	var ok bool
@@ -236,6 +240,15 @@ func (vr *Varouter) get(elem *element, name string, templates *[]string, params 
 		return save
 	}
 	return
+}
+
+func appendMatches(templates *[]string, template *string, override bool) {
+	if override {
+		if l := len(*templates); l > 0 {
+			(*templates)[l-1] = *template
+		}
+	}
+	*templates = append(*templates, *template)
 }
 
 // printelement recursively puts names of defined templates in e to a.
