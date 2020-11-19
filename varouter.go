@@ -241,9 +241,8 @@ func (vr *Varouter) get(elem *element, name string, templates *[]string, params 
 
 func appendMatches(templates *[]string, template *string, override bool) {
 	if override {
-		if l := len(*templates); l > 0 {
-			(*templates)[l-1] = *template
-		}
+		*templates = []string{*template}
+		return
 	}
 	*templates = append(*templates, *template)
 }

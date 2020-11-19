@@ -40,6 +40,47 @@ func FailMatchTest(t *testing.T, match Match, result []string, ph PlaceholderMap
 // DebugPrintElements prints out all elements in Varouter.
 func DebugPrintElements(vr *Varouter) { debugPrintElements(vr.root) }
 
+// RunMatchTests runs a match test.
+func RunMatchTests(t *testing.T, tests []MatchTest) {
+	for _, matchtest := range tests {
+		vr := New()
+		for _, pattern := range matchtest.RegisteredPatterns {
+			if err := vr.Register(pattern); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, match := range matchtest.Matches {
+			patterns, placeholders, matched := vr.Match(match.Path)
+			if matched != match.ExpectedMatch {
+				DebugPrintElements(vr)
+				FailMatchTest(t, match, patterns, placeholders, matched)
+			}
+			for _, expectedpattern := range match.ExpectedPatterns {
+				found := false
+				for i := 0; i < len(patterns); i++ {
+					if patterns[i] == expectedpattern {
+						found = true
+					}
+				}
+				if len(match.ExpectedPatterns) != len(patterns) {
+					DebugPrintElements(vr)
+					FailMatchTest(t, match, patterns, placeholders, matched)
+				}
+				if !found {
+					DebugPrintElements(vr)
+					FailMatchTest(t, match, patterns, placeholders, matched)
+				}
+			}
+			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
+				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
+					DebugPrintElements(vr)
+					FailMatchTest(t, match, patterns, placeholders, matched)
+				}
+			}
+		}
+	}
+}
+
 type RegistrationTest struct {
 	Pattern     string
 	ExpectErr   bool
@@ -154,39 +195,7 @@ var MatchExactTests = []MatchTest{
 }
 
 func TestExactMatch(t *testing.T) {
-	for _, matchtest := range MatchExactTests {
-		vr := New()
-		for _, pattern := range matchtest.RegisteredPatterns {
-			if err := vr.Register(pattern); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, match := range matchtest.Matches {
-			patterns, placeholders, matched := vr.Match(match.Path)
-			if matched != match.ExpectedMatch {
-				DebugPrintElements(vr)
-				FailMatchTest(t, match, patterns, placeholders, matched)
-			}
-			for _, expectedpattern := range match.ExpectedPatterns {
-				found := false
-				for i := 0; i < len(patterns); i++ {
-					if patterns[i] == expectedpattern {
-						found = true
-					}
-				}
-				if !found {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
-				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-		}
-	}
+	RunMatchTests(t, MatchExactTests)
 }
 
 var MatchPlaceholderTests = []MatchTest{
@@ -227,39 +236,7 @@ var MatchPlaceholderTests = []MatchTest{
 }
 
 func TestPlaceholderMatch(t *testing.T) {
-	for _, matchtest := range MatchPlaceholderTests {
-		vr := New()
-		for _, pattern := range matchtest.RegisteredPatterns {
-			if err := vr.Register(pattern); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, match := range matchtest.Matches {
-			patterns, placeholders, matched := vr.Match(match.Path)
-			if matched != match.ExpectedMatch {
-				DebugPrintElements(vr)
-				FailMatchTest(t, match, patterns, placeholders, matched)
-			}
-			for _, expectedpattern := range match.ExpectedPatterns {
-				found := false
-				for i := 0; i < len(patterns); i++ {
-					if patterns[i] == expectedpattern {
-						found = true
-					}
-				}
-				if !found {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
-				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-		}
-	}
+	RunMatchTests(t, MatchPlaceholderTests)
 }
 
 var MatchWildcardTests = []MatchTest{
@@ -303,7 +280,7 @@ var MatchWildcardTests = []MatchTest{
 			},
 			{
 				Path:                 "/users/vedran/.config/",
-				ExpectedPatterns:     []string{"/users/+"},
+				ExpectedPatterns:     []string{"/users/+", "/users/+/.config/+"},
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
@@ -321,49 +298,19 @@ var MatchWildcardTests = []MatchTest{
 }
 
 func TestWildcardMatch(t *testing.T) {
-	for _, matchtest := range MatchWildcardTests {
-		vr := New()
-		for _, pattern := range matchtest.RegisteredPatterns {
-			if err := vr.Register(pattern); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, match := range matchtest.Matches {
-			patterns, placeholders, matched := vr.Match(match.Path)
-			if matched != match.ExpectedMatch {
-				DebugPrintElements(vr)
-				FailMatchTest(t, match, patterns, placeholders, matched)
-			}
-			for _, expectedpattern := range match.ExpectedPatterns {
-				found := false
-				for i := 0; i < len(patterns); i++ {
-					if patterns[i] == expectedpattern {
-						found = true
-					}
-				}
-				if !found {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
-				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-		}
-	}
+	RunMatchTests(t, MatchWildcardTests)
 }
 
 var MatchOverrideTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
 			"/",
-			"/users/*",
-			"/users/vedran/*",
+			"/+",
+			"!/file",
+			"/users/+",
+			"/users/vedran/+",
 			"!/users/vedran/.config",
-			"!/users/vedran/.config/*",
+			"!/users/vedran/.config/+",
 			"!/users/vedran/.config/stack",
 		},
 		Matches: []Match{
@@ -379,44 +326,18 @@ var MatchOverrideTests = []MatchTest{
 				ExpectedPlaceholders: nil,
 				ExpectedMatch:        true,
 			},
+			{
+				Path:                 "/file",
+				ExpectedPatterns:     []string{"!/file"},
+				ExpectedPlaceholders: nil,
+				ExpectedMatch:        true,
+			},
 		},
 	},
 }
 
 func TestOverrideMatch(t *testing.T) {
-	for _, matchtest := range MatchOverrideTests {
-		vr := New()
-		for _, pattern := range matchtest.RegisteredPatterns {
-			if err := vr.Register(pattern); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, match := range matchtest.Matches {
-			patterns, placeholders, matched := vr.Match(match.Path)
-			if matched != match.ExpectedMatch {
-				DebugPrintElements(vr)
-				FailMatchTest(t, match, patterns, placeholders, matched)
-			}
-			for _, expectedpattern := range match.ExpectedPatterns {
-				found := false
-				for i := 0; i < len(patterns); i++ {
-					if patterns[i] == expectedpattern {
-						found = true
-					}
-				}
-				if !found {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
-				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-		}
-	}
+	RunMatchTests(t, MatchOverrideTests)
 }
 
 var MatchCombinedTests = []MatchTest{
@@ -440,39 +361,7 @@ var MatchCombinedTests = []MatchTest{
 }
 
 func TestCombined(t *testing.T) {
-	for _, matchtest := range MatchCombinedTests {
-		vr := New()
-		for _, pattern := range matchtest.RegisteredPatterns {
-			if err := vr.Register(pattern); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for _, match := range matchtest.Matches {
-			patterns, placeholders, matched := vr.Match(match.Path)
-			if matched != match.ExpectedMatch {
-				DebugPrintElements(vr)
-				FailMatchTest(t, match, patterns, placeholders, matched)
-			}
-			for _, expectedpattern := range match.ExpectedPatterns {
-				found := false
-				for i := 0; i < len(patterns); i++ {
-					if patterns[i] == expectedpattern {
-						found = true
-					}
-				}
-				if !found {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
-				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
-					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
-				}
-			}
-		}
-	}
+	RunMatchTests(t, MatchCombinedTests)
 }
 
 func BenchmarkRegister(b *testing.B) {
