@@ -195,6 +195,9 @@ func (vr *Varouter) Match(path string) (matches []string, params PlaceholderMap,
 			continue
 		}
 		if current = vr.get(current, path[marker:cursor], &matches, &params); current == nil {
+			if len(matches) > 0 {
+				return matches, params, true
+			}
 			return nil, nil, false
 		}
 		marker = cursor

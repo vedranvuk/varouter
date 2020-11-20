@@ -364,6 +364,51 @@ func TestCombined(t *testing.T) {
 	RunMatchTests(t, MatchCombinedTests)
 }
 
+var MatchCombinedTests2 = []MatchTest{
+	{
+		RegisteredPatterns: []string{
+			"/+",
+			"!/etc",
+			"/usr",
+		},
+		Matches: []Match{
+			{
+				Path:                 "/home/vedran/.config",
+				ExpectedPatterns:     []string{"/+"},
+				ExpectedPlaceholders: nil,
+				ExpectedMatch:        true,
+			},
+		},
+	},
+}
+
+func TestCombined2(t *testing.T) {
+	RunMatchTests(t, MatchCombinedTests2)
+}
+
+var MatchCombinedTests3 = []MatchTest{
+	{
+		RegisteredPatterns: []string{
+			"/",
+			"/home/:user/+",
+			"!/etc",
+			"/usr",
+		},
+		Matches: []Match{
+			{
+				Path:                 "/home/vedran/.config",
+				ExpectedPatterns:     []string{"/home/:user/+"},
+				ExpectedPlaceholders: PlaceholderMap{"user": "vedran"},
+				ExpectedMatch:        true,
+			},
+		},
+	},
+}
+
+func TestCombined3(t *testing.T) {
+	RunMatchTests(t, MatchCombinedTests3)
+}
+
 func BenchmarkRegister(b *testing.B) {
 	vl := New()
 	b.ResetTimer()
