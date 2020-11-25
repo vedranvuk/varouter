@@ -20,13 +20,13 @@ type element struct {
 	subs elementMap
 	// override specifies if this element is an override element.
 	override bool
-	// wildcard specifies if this element contains a wildcard element.
-	wildcard bool
 	// template is the template string that registered this element.
 	template string
-	// container, if not empty, specifies that this element is a container
+	// haswildcard specifies if this element contains a haswildcard element.
+	haswildcard bool
+	// hascontainer, if not empty, specifies that this element is a hascontainer
 	// of a single placeholder element and the value is it's name.
-	container string
+	hascontainer string
 }
 
 // newElement returns a new element instance.
@@ -106,7 +106,7 @@ func NewVarouter(override, separator, placeholder, wildcard byte) *Varouter {
 // "/edit/:user" and "/edit/:admin" is not.
 func (vr *Varouter) Register(template string) (err error) {
 	var override bool
-	var wildcard bool
+	var haswildcard bool
 	var current *element = vr.root
 	var cursor, marker, length int = 1, 0, len(template)
 	if length == 0 {
@@ -122,7 +122,7 @@ func (vr *Varouter) Register(template string) (err error) {
 	}
 	if length > 1 && template[length-1] == vr.wildcard && template[length-2] == vr.separator {
 		length--
-		wildcard = true
+		haswildcard = true
 	}
 	for ; cursor < length; cursor++ {
 		if template[cursor] != vr.separator {
@@ -133,7 +133,7 @@ func (vr *Varouter) Register(template string) (err error) {
 		}
 		marker = cursor
 	}
-	if current, err = vr.getOrAddSub(current, template[marker:cursor], wildcard); err != nil {
+	if current, err = vr.getOrAddSub(current, template[marker:cursor], haswildcard); err != nil {
 		return
 	}
 	current.template = template
@@ -152,21 +152,21 @@ func (vr *Varouter) getOrAddSub(elem *element, name string, wildcard bool) (e *e
 	if e, ok = elem.subs[name]; ok {
 		return
 	}
-	if elem.container != "" {
+	if elem.hascontainer != "" {
 		return nil, errors.New("varouter: only one placeholder allowed per level")
 	}
-	if len(elem.subs) > 0 && container && !(len(elem.subs) == 1 && elem.wildcard) {
+	if len(elem.subs) > 0 && container && !(len(elem.subs) == 1 && elem.haswildcard) {
 		return nil, errors.New("varouter: cannot register a placeholder on a path level with defined elements")
 	}
 	e = newElement()
 	if wildcard {
-		elem.wildcard = true
+		elem.haswildcard = true
 		elem.subs[name+string(vr.wildcard)] = e
 	} else {
 		elem.subs[name] = e
 	}
 	if container {
-		elem.container = name
+		elem.hascontainer = name
 	}
 	vr.count++
 	return
@@ -222,15 +222,15 @@ func (vr *Varouter) Match(path string) (matches []string, params PlaceholderMap,
 // get gets a sub element of elem by name in a manner depending on element type
 // and returns it or nil if element is not found.
 func (vr *Varouter) get(elem *element, name string, templates *[]string, params *PlaceholderMap) (e *element) {
-	if elem.container != "" {
+	if elem.hascontainer != "" {
 		if *params == nil {
 			*params = make(PlaceholderMap)
 		}
-		e = elem.subs[elem.container]
-		(*params)[elem.container] = name[1:]
+		e = elem.subs[elem.hascontainer]
+		(*params)[elem.hascontainer] = name[1:]
 		return
 	}
-	if elem.wildcard {
+	if elem.haswildcard {
 		e = elem.subs[string([]byte{vr.separator, vr.wildcard})]
 		appendMatches(templates, &e.template, e.override)
 	}

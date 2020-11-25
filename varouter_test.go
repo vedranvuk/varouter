@@ -21,7 +21,7 @@ Container: '%s'
 Wildcard:  '%t'
 NumSubs:   '%d'
 
-`, val.template, key, val.override, val.container, val.wildcard, len(val.subs))
+`, val.template, key, val.override, val.hascontainer, val.haswildcard, len(val.subs))
 		debugPrintElements(val)
 	}
 }
