@@ -62,8 +62,8 @@ var placeholders = placeholderKey{"varouter/servemux/placeholders"}
 // Placeholders is a helper method that retrieves Placeholders map from the
 // context of a *http.Request. If no Placeholder map was stored in the request
 // a nil Placeholders map is returned.
-func Placeholders(r *http.Request) varouter.PlaceholderMap {
-	if placeholders, ok := r.Context().Value(placeholders).(varouter.PlaceholderMap); ok {
+func Placeholders(r *http.Request) varouter.Vars {
+	if placeholders, ok := r.Context().Value(placeholders).(varouter.Vars); ok {
 		return placeholders
 	}
 	return nil

@@ -11,26 +11,37 @@ import (
 	"errors"
 )
 
-// elementMap is a map of path element names to their definitions.
-type elementMap map[string]*element
+// Vars is a map of variable names to their values parsed from a path.
+type Vars map[string]string
+
+// elements is a map of path element names to their definitions.
+type elements map[string]*element
 
 // element defines a path element.
 type element struct {
-	// subs is a map of sub path elements.
-	subs elementMap
-	// override specifies if this element is an override element.
-	override bool
-	// template is the template string that registered this element.
+	// subs are the sub elements of this element.
+	subs elements
+	// template, if not empty, specifies this element is the last element of
+	// a registered template and the value is the template.
 	template string
-	// haswildcard specifies if this element contains a haswildcard element.
-	haswildcard bool
-	// hascontainer, if not empty, specifies that this element is a hascontainer
-	// of a single placeholder element and the value is it's name.
-	hascontainer string
+	// hasvariable, if not empty, specifies that this element is a container
+	// of a single variable element and the value is its name.
+	hasvariable string
+	// isprefix specifies if this element is a prefix element.
+	// Value isignored if this element template is empty.
+	isprefix bool
+	// isoverride specifies if this element is an override element.
+	// Value is ignored if this element template is empty.
+	isoverride bool
+	// iswildcard specifies if this element name has wildcards.
+	iswildcard bool
+	// haswildcards specifies that one or more subs of this element have
+	// wildcards in the name.
+	haswildcards bool
 }
 
 // newElement returns a new element instance.
-func newElement() *element { return &element{subs: make(elementMap)} }
+func newElement() *element { return &element{subs: make(elements)} }
 
 // Varouter is a flexible path matching router with support for path element
 // variables and wildcards for matching multiple templates that does not suffer
@@ -49,24 +60,28 @@ type Varouter struct {
 	count int      // count is the number of registered templates.
 	root  *element // root is the root element.
 
-	override    byte // Override is the override character to use. (Default '!').
-	separator   byte // Separator is the path separator character to use. (Default '/').
-	placeholder byte // Placeholder is the variable placeholder character to use. Default (':').
-	wildcard    byte // Wildcard is the wildcard character to use. Default: ('+').
+	override     byte // Override is the override character to use. Default: '!'.
+	separator    byte // Separator is the path separator character to use. Default: '/'.
+	variable     byte // Variable is the variable placeholder character to use. Default: ':'.
+	prefix       byte // Prefix is the character that prefix character to use. Default: '+'.
+	wildcardone  byte // Wildcardone is the character that matches any one character. Default: '?'.
+	wildcardmany byte // WIldcardmany is the character that matches one or more characters. Default: '*';
 }
 
 // New returns a new *Varouter instance with default configuration.
-func New() *Varouter { return NewVarouter('!', '/', ':', '+') }
+func New() *Varouter { return NewVarouter(false, '!', '/', ':', '+', '?', '*') }
 
 // NewVarouter returns a new *Varouter instance with the given override,
 // separator, placeholder and wildcard character.
-func NewVarouter(override, separator, placeholder, wildcard byte) *Varouter {
+func NewVarouter(usewildcards bool, override, separator, variable, prefix, wildcardone, wildcardmany byte) *Varouter {
 	return &Varouter{
-		root:        newElement(),
-		override:    override,
-		separator:   separator,
-		placeholder: placeholder,
-		wildcard:    wildcard,
+		root:         newElement(),
+		override:     override,
+		separator:    separator,
+		variable:     variable,
+		prefix:       prefix,
+		wildcardone:  wildcardone,
+		wildcardmany: wildcardmany,
 	}
 }
 
@@ -105,76 +120,125 @@ func NewVarouter(override, separator, placeholder, wildcard byte) *Varouter {
 // "/edit/:user" and "/export/:user" is allowed but
 // "/edit/:user" and "/edit/:admin" is not.
 func (vr *Varouter) Register(template string) (err error) {
-	var override bool
-	var haswildcard bool
-	var current *element = vr.root
-	var cursor, marker, length int = 1, 0, len(template)
-	if length == 0 {
-		return errors.New("varouter: empty path")
+	var state registerState
+	state.template = &template
+	state.current = vr.root
+	if state.length = len(template); state.length < 1 {
+		return errors.New("varouter: empty template name")
 	}
-	if template[0] == vr.override {
-		override = true
-		cursor++
-		marker++
+	for state.cursor = 0; state.cursor < state.length; state.cursor++ {
+		if template[state.cursor] == vr.prefix && state.cursor < state.length-1 {
+			return errors.New("varouter: prefix character allowed only as suffix")
+		}
 	}
-	if template[marker] != vr.separator {
-		return errors.New("varouter: path must start with a separator")
+	state.cursor = 1
+	if (*state.template)[0] == vr.override {
+		state.override = true
+		state.marker++
+		state.cursor++
 	}
-	if length > 1 && template[length-1] == vr.wildcard && template[length-2] == vr.separator {
-		length--
-		haswildcard = true
+	if (*state.template)[state.marker] != vr.separator {
+		return errors.New("varouter: invalid template")
 	}
-	for ; cursor < length; cursor++ {
-		if template[cursor] != vr.separator {
+	for ; state.cursor < state.length; state.cursor++ {
+		if (*state.template)[state.cursor] != vr.separator {
 			continue
 		}
-		if current, err = vr.getOrAddSub(current, template[marker:cursor], false); err != nil {
-			return
+		if err = vr.matchOrInsert(&state); err != nil {
+			return err
 		}
-		marker = cursor
+		state.marker = state.cursor
 	}
-	if current, err = vr.getOrAddSub(current, template[marker:cursor], haswildcard); err != nil {
-		return
+	if err = vr.matchOrInsert(&state); err != nil {
+		return err
 	}
-	current.template = template
-	current.override = override
+	// Mark the last element as override.
+	if state.override {
+		state.current.isoverride = true
+	}
+	state.current.template = template
 	return nil
 }
 
-// getOrAddSub is a helper to Register that gets a sub element by name or adds
-// one if it does not exist respecting the element type in the process.
-func (vr *Varouter) getOrAddSub(elem *element, name string, wildcard bool) (e *element, err error) {
-	var container bool = len(name) > 1 && name[1] == vr.placeholder
-	if container {
-		name = name[2:]
-	}
-	var ok bool
-	if e, ok = elem.subs[name]; ok {
-		return
-	}
-	if elem.hascontainer != "" {
-		return nil, errors.New("varouter: only one placeholder allowed per level")
-	}
-	if len(elem.subs) > 0 && container && !(len(elem.subs) == 1 && elem.haswildcard) {
-		return nil, errors.New("varouter: cannot register a placeholder on a path level with defined elements")
-	}
-	e = newElement()
-	if wildcard {
-		elem.haswildcard = true
-		elem.subs[name+string(vr.wildcard)] = e
-	} else {
-		elem.subs[name] = e
-	}
-	if container {
-		elem.hascontainer = name
-	}
-	vr.count++
-	return
+// registerState maintains the template registration state.
+type registerState struct {
+	template *string
+	current  *element
+	cursor   int
+	marker   int
+	length   int
+	override bool
 }
 
-// PlaceholderMap is a map of Placeholder names to their values parsed from a
-// Match path.
-type PlaceholderMap map[string]string
+// matchOrInsert matches a single path element or inserts a new one if it does
+// not exist and updates element properties in the process.
+func (vr *Varouter) matchOrInsert(state *registerState) error {
+	var name = (*state.template)[state.marker:state.cursor]
+	var elem *element
+	var exists bool
+	// Try exact match first.
+	if elem, exists = state.current.subs[name]; exists {
+		// If last element being matched and this registered element
+		// is not a template, error out.
+		if state.cursor == state.length && state.current.template != "" {
+			return errors.New("varouter: template '" + elem.template + "' already registered")
+		}
+		// Update state and advance to next registered level.
+		state.current = elem
+		return nil
+	}
+	var namelen = len(name)
+	var prefix = name[namelen-1] == vr.prefix
+	if prefix {
+		name = name[:namelen-1]
+		namelen--
+	}
+	elem = newElement()
+	// Mark as wildcard for match optimization.
+	if elem.iswildcard = vr.hasWildcards(&name); elem.iswildcard {
+		state.current.haswildcards = true
+	}
+	// Register as variable.
+	if state.current.hasvariable != "" {
+		return errors.New("varouter: element registration on a level with a variable")
+	}
+	if namelen > 1 && name[1] == vr.variable {
+		if namelen <= 2 {
+			return errors.New("varouter: empty variable name")
+		}
+		if len(state.current.subs) > 0 {
+			return errors.New("varouter: multiple variable registrations on a path level")
+		}
+		// Technically, wildcards in variable names would work.
+		if elem.iswildcard {
+			return errors.New("varouter: variable names cannot contain wildcards")
+		}
+		state.current.hasvariable = name
+	}
+	// If this is the last element and its last char is a prefix
+	// character, set eventual preparsed flags.
+	if state.cursor >= state.length {
+		elem.isprefix = prefix
+		elem.isoverride = state.override
+	}
+	// Add item.
+	state.current.subs[name] = elem
+	state.current = elem
+	vr.count++
+	return nil
+}
+
+// hasWildcards returns if specified name contains wildcard characters.
+func (vr *Varouter) hasWildcards(name *string) bool {
+	var i int
+	var l = len(*name)
+	for i = 0; i < l; i++ {
+		if (*name)[i] == vr.wildcardone || (*name)[i] == vr.wildcardmany {
+			return true
+		}
+	}
+	return false
+}
 
 // Match matches a path against registered templates and returns the names of
 // matched templates, a map of parsed param names to param values and a bool
@@ -186,68 +250,195 @@ type PlaceholderMap map[string]string
 //
 // If no templates were matched the resulting templates will be nil.
 // If no params were parsed from the path the resulting ParamMap wil be nil.
-func (vr *Varouter) Match(path string) (matches []string, params PlaceholderMap, matched bool) {
-	var cursor, marker int
-	var length int = len(path)
-	var current *element = vr.root
-	for cursor, marker = 1, 0; cursor < length; cursor++ {
-		if path[cursor] != vr.separator {
+func (vr *Varouter) Match(path string) (matches []string, vars Vars, matched bool) {
+	var state = matchState{
+		current: vr.root,
+		path:    &path,
+		length:  len(path),
+		matches: &matches,
+		vars:    &vars,
+	}
+	if state.length < 1 {
+		return nil, nil, false
+	}
+	vars = make(Vars)
+	vr.nextLevel(0, &state)
+	return matches, vars, len(matches) > 0
+}
+
+// matchState maintains the match state.
+type matchState struct {
+	current     *element
+	path        *string
+	matches     *[]string
+	vars        *Vars
+	length      int
+	hasoverride bool
+}
+
+// nextLevel advances matching to the next path level.
+func (vr *Varouter) nextLevel(marker int, state *matchState) {
+	var cursor int
+	for cursor = marker + 1; cursor < state.length; cursor++ {
+		if (*state.path)[cursor] != vr.separator {
 			continue
 		}
-		if current = vr.get(current, path[marker:cursor], &matches, &params); current == nil {
-			if len(matches) > 0 {
-				return matches, params, true
-			}
-			return nil, nil, false
+		if vr.matchLevel(cursor, marker, state) {
+			return
 		}
 		marker = cursor
 	}
-	matched = len(matches) > 0
-	if current = vr.get(current, path[marker:cursor], &matches, &params); current == nil && !matched {
-		return nil, nil, false
+	vr.matchLevel(cursor, marker, state)
+}
+
+// matchLevel help.
+func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool) {
+	// Match by name.
+	if marker > state.length {
+		return true
 	}
-	if cursor == length && current != nil && current.template != "" {
-		if len(matches) > 0 {
-			if matches[len(matches)-1] != current.template {
-				appendMatches(&matches, &current.template, current.override)
+	var name string
+	if cursor >= state.length {
+		name = (*state.path)[marker:]
+	} else {
+		name = (*state.path)[marker:cursor]
+	}
+	// fmt.Printf("? MatchLevel: Path: '%s', Name: '%s', Cursor: '%d', Marker: '%d', Length: '%d'\n", *state.path, name, cursor, marker, state.length)
+	if name == "" {
+		return
+	}
+	// If element is a variable holder, retrieve the sub element by
+	// variable name, add the current level name as variable value
+	// and advance to next level.
+	if state.current.hasvariable != "" {
+		(*state.vars)[state.current.hasvariable[2:]] = (*state.path)[marker+1 : cursor]
+		state.current = state.current.subs[state.current.hasvariable]
+		if vr.maybeAddMatch(&cursor, state) {
+			return true
+		}
+		cursor += len(name)
+		vr.nextLevel(cursor, state)
+		return
+	}
+	// If element subs have any wildcard names, match against them.
+	var subname string
+	var subelem *element
+	var saveelem = state.current
+	if state.current.haswildcards {
+		for subname, subelem = range state.current.subs {
+			if !subelem.iswildcard {
+				continue
 			}
+			if !vr.matchWildcard(&name, &subname) {
+				continue
+			}
+			state.current = subelem
+			vr.maybeAddMatch(&cursor, state)
+			vr.nextLevel(cursor, state)
+		}
+		state.current = saveelem
+	}
+	var exists bool
+	// Check for prefix at element root.
+	if subelem, exists = state.current.subs[string(vr.separator)]; exists && subelem.isprefix {
+		saveelem = state.current
+		state.current = subelem
+		vr.maybeAddMatch(&cursor, state)
+		state.current = saveelem
+	}
+	// If element has a normal name, try an exact match.
+	if subelem, exists = state.current.subs[name]; exists {
+		state.current = subelem
+		if vr.maybeAddMatch(&cursor, state) {
+			return true
+		}
+		vr.nextLevel(cursor, state)
+		return true
+	}
+	return true
+}
+
+// maybeAddMatch maybe adds the current level to matrches if:
+// This level is a prefix template.
+// This is the last level being matched and depth matches tested path.
+// Matches are replaced if current level is a match and an override.
+func (vr *Varouter) maybeAddMatch(cursor *int, state *matchState) (added bool) {
+	// If this level is a prefix template it's a match.
+	if state.current.isprefix {
+		goto add
+	}
+	// Current level must be the last element of a registered template.
+	if state.current.template == "" {
+		return false
+	}
+	// Exit if current level below max level.
+	if *cursor < state.length {
+		return false
+	}
+add:
+	// If current match is an override, clear other matches.
+	if state.current.isoverride {
+		state.hasoverride = true
+		if len(*state.matches) > 0 {
+			(*state.matches)[0] = state.current.template
+			(*state.matches) = (*state.matches)[:1]
+			return false
+		}
+		*state.matches = append(*state.matches, state.current.template)
+		return false
+	}
+	// If there are override matches and current is not override, skip.
+	if state.hasoverride && !state.current.isoverride {
+		return false
+	}
+	*state.matches = append(*state.matches, state.current.template)
+	if !state.current.isprefix {
+		return true
+	}
+	return false
+}
+
+// matchWildcard returns truth if text matches wildcard.
+func (vr *Varouter) matchWildcard(text, wildcard *string) bool {
+	var lt, lw int = len(*text), len(*wildcard)
+	if lt == 0 || lw == 0 {
+		return false
+	}
+	var it, iw int
+	for it < lt && iw < lw {
+		if (*wildcard)[iw] == vr.wildcardmany {
+			break
+		}
+		if (*wildcard)[iw] != vr.wildcardone && (*text)[it] != (*wildcard)[iw] {
+			return false
+		}
+		it++
+		iw++
+	}
+	var st, sw int = -1, 0
+	for it < lt && iw < lw {
+		if (*wildcard)[iw] == vr.wildcardmany {
+			iw++
+			if iw >= lw {
+				return true
+			}
+			sw = iw
+			st = it
 		} else {
-			appendMatches(&matches, &current.template, current.override)
+			if (*wildcard)[iw] == vr.wildcardone || (*text)[it] != (*wildcard)[iw] {
+				it++
+				iw++
+			} else {
+				it = st
+				st++
+				iw = sw
+			}
 		}
-		matched = true
 	}
-	return
-}
-
-// get gets a sub element of elem by name in a manner depending on element type
-// and returns it or nil if element is not found.
-func (vr *Varouter) get(elem *element, name string, templates *[]string, params *PlaceholderMap) (e *element) {
-	if elem.hascontainer != "" {
-		if *params == nil {
-			*params = make(PlaceholderMap)
-		}
-		e = elem.subs[elem.hascontainer]
-		(*params)[elem.hascontainer] = name[1:]
-		return
+	for iw < lw && (*wildcard)[iw] == vr.wildcardmany {
+		iw++
 	}
-	if elem.haswildcard {
-		e = elem.subs[string([]byte{vr.separator, vr.wildcard})]
-		appendMatches(templates, &e.template, e.override)
-	}
-	var save *element
-	var ok bool
-	if save, ok = elem.subs[name]; ok {
-		return save
-	}
-	return
-}
-
-func appendMatches(templates *[]string, template *string, override bool) {
-	if override {
-		*templates = []string{*template}
-		return
-	}
-	*templates = append(*templates, *template)
+	return iw == lw
 }
 
 // printelement recursively puts names of defined templates in e to a.

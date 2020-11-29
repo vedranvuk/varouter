@@ -6,6 +6,7 @@ package varouter
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/vedranvuk/randomex"
@@ -14,33 +15,40 @@ import (
 // debugPrintElements recursively prints out all elements in e.
 func debugPrintElements(e *element) {
 	for key, val := range e.subs {
-		fmt.Printf(`Template:  '%s'
-Element:   '%s'
-Override:  '%t'
-Container: '%s'
-Wildcard:  '%t'
+		fmt.Printf(`Sub:  '%s'
 NumSubs:   '%d'
+Template:   '%s'
+IsOverride:  '%t'
+IsPrefix:  '%t'
+IsWildcard:  '%t'
+HasVariable: '%s'
+HasWildcards: '%t'
 
-`, val.template, key, val.override, val.hascontainer, val.haswildcard, len(val.subs))
+`, key, len(val.subs), val.template, val.isoverride, val.isprefix, val.iswildcard, val.hasvariable, val.haswildcards)
 		debugPrintElements(val)
 	}
 }
 
-func FailMatchTest(t *testing.T, match Match, result []string, ph PlaceholderMap, expected bool) {
+func FailMatchTest(t *testing.T, match Match, result []string, ph Vars, expected bool) {
 	t.Fatalf(`
 	Match failed,
 	Expected: 
 	  MatchTest:    '%#+v'
 	Got:      
 	  Patterns:     '%#+v'
-	  Placeholders: '%#+v'
+	  variables: '%#+v'
 	  Matched:      '%#+v'`, match, result, ph, expected)
 }
 
 // DebugPrintElements prints out all elements in Varouter.
-func DebugPrintElements(vr *Varouter) { debugPrintElements(vr.root) }
+func DebugPrintElements(vr *Varouter) {
+	debugPrintElements(vr.root)
+	tmpls := vr.DefinedTemplates()
+	sort.Strings(tmpls)
+	fmt.Println(tmpls)
+}
 
-// RunMatchTests runs a match test.
+// RunMatchTests runs match tests.
 func RunMatchTests(t *testing.T, tests []MatchTest) {
 	for _, matchtest := range tests {
 		vr := New()
@@ -50,10 +58,10 @@ func RunMatchTests(t *testing.T, tests []MatchTest) {
 			}
 		}
 		for _, match := range matchtest.Matches {
-			patterns, placeholders, matched := vr.Match(match.Path)
+			patterns, variables, matched := vr.Match(match.Path)
 			if matched != match.ExpectedMatch {
 				DebugPrintElements(vr)
-				FailMatchTest(t, match, patterns, placeholders, matched)
+				FailMatchTest(t, match, patterns, variables, matched)
 			}
 			for _, expectedpattern := range match.ExpectedPatterns {
 				found := false
@@ -64,17 +72,17 @@ func RunMatchTests(t *testing.T, tests []MatchTest) {
 				}
 				if len(match.ExpectedPatterns) != len(patterns) {
 					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
+					FailMatchTest(t, match, patterns, variables, matched)
 				}
 				if !found {
 					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
+					FailMatchTest(t, match, patterns, variables, matched)
 				}
 			}
-			for expectedplaceholderkey, expectedplaceholderval := range match.ExpectedPlaceholders {
-				if val, ok := placeholders[expectedplaceholderkey]; !ok || expectedplaceholderval != val {
+			for expectedvariablekey, expectedvariableval := range match.Expectedvariables {
+				if val, ok := variables[expectedvariablekey]; !ok || expectedvariableval != val {
 					DebugPrintElements(vr)
-					FailMatchTest(t, match, patterns, placeholders, matched)
+					FailMatchTest(t, match, patterns, variables, matched)
 				}
 			}
 		}
@@ -91,17 +99,17 @@ var RegistrationTests = []RegistrationTest{
 	{"", true, "Failed detecting empty pattern."},
 	{"h", true, "Failed detecting invalid pattern."},
 	{"/", false, ""},
-	{"/:", true, "Failed detecting invalid placeholder pattern."},
+	{"/:", true, "Failed detecting invalid variable pattern."},
 	{"/home", false, ""},
 	{"/home*", false, ""},
 	{"/home/*", false, ""},
-	{":cantregisterthis", true, "Failed detecting Placeholder being registered on a path level with registered elements."},
-	{":cantregisterthis/", true, "Failed detecting Placeholder being registered on a path level with registered elements."},
+	{":cantregisterthis", true, "Failed detecting variable being registered on a path level with registered elements."},
+	{":cantregisterthis/", true, "Failed detecting variable being registered on a path level with registered elements."},
 	{"/home/users", false, ""},
 	{"/home/users/:user", false, ""},
-	{"/home/users/:username", true, "Failed detecting Placeholder being registered on a path level with registered elements."},
-	{"/home/users/vedran", true, "Failed detecting Placeholder being registered on a path level with registered elements."},
-	{"/home/users/vedran/.config", true, "Failed detecting Placeholder being registered on a path level with registered elements."},
+	{"/home/users/:username", true, "Failed detecting variable being registered on a path level with registered elements."},
+	{"/home/users/vedran", true, "Failed detecting variable being registered on a path level with registered elements."},
+	{"/home/users/vedran/.config", true, "Failed detecting variable being registered on a path level with registered elements."},
 }
 
 func TestRegister(t *testing.T) {
@@ -117,16 +125,18 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+// Match is a definition of expected match results.
 type Match struct {
-	Path                 string
-	ExpectedPatterns     []string
-	ExpectedPlaceholders PlaceholderMap
-	ExpectedMatch        bool
+	Path              string   // Path to test against.
+	ExpectedPatterns  []string // Expected matched patterns.
+	Expectedvariables Vars     // Expected variables.
+	ExpectedMatch     bool     // Expected Match result.
 }
 
+// MatchTest is a definiton of a Match test.
 type MatchTest struct {
-	RegisteredPatterns []string
-	Matches            []Match
+	RegisteredPatterns []string // Patterns to pre-register for the test.
+	Matches            []Match  // Matches to run against registered patterns.
 }
 
 var MatchExactTests = []MatchTest{
@@ -143,52 +153,52 @@ var MatchExactTests = []MatchTest{
 		},
 		Matches: []Match{
 			{
-				Path:                 "/",
-				ExpectedPatterns:     []string{"/"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/",
+				ExpectedPatterns:  []string{"/"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home",
-				ExpectedPatterns:     []string{"/home"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home",
+				ExpectedPatterns:  []string{"/home"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/",
-				ExpectedPatterns:     []string{"/home/"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home/",
+				ExpectedPatterns:  []string{"/home/"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/users",
-				ExpectedPatterns:     []string{"/home/users"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home/users",
+				ExpectedPatterns:  []string{"/home/users"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/users/",
-				ExpectedPatterns:     []string{"/home/users/"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home/users/",
+				ExpectedPatterns:  []string{"/home/users/"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/users//",
-				ExpectedPatterns:     []string{"/home/users//"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home/users//",
+				ExpectedPatterns:  []string{"/home/users//"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home//users/",
-				ExpectedPatterns:     []string{"/home//users/"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home//users/",
+				ExpectedPatterns:  []string{"/home//users/"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "///home///users///",
-				ExpectedPatterns:     []string{"///home///users///"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "///home///users///",
+				ExpectedPatterns:  []string{"///home///users///"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 		},
 	},
@@ -198,7 +208,7 @@ func TestExactMatch(t *testing.T) {
 	RunMatchTests(t, MatchExactTests)
 }
 
-var MatchPlaceholderTests = []MatchTest{
+var MatchVariableTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
 			"/home/users/:username",
@@ -208,97 +218,62 @@ var MatchPlaceholderTests = []MatchTest{
 		},
 		Matches: []Match{
 			{
-				Path:                 "/home/users/vedran",
-				ExpectedPatterns:     []string{"/home/users/:username"},
-				ExpectedPlaceholders: PlaceholderMap{"username": "vedran"},
-				ExpectedMatch:        true,
+				Path:              "/home/users/vedran",
+				ExpectedPatterns:  []string{"/home/users/:username"},
+				Expectedvariables: Vars{"username": "vedran"},
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/users/vedran/",
-				ExpectedPatterns:     []string{"/home/users/:username/"},
-				ExpectedPlaceholders: PlaceholderMap{"username": "vedran"},
-				ExpectedMatch:        true,
+				Path:              "/home/users/vedran/",
+				ExpectedPatterns:  []string{"/home/users/:username/"},
+				Expectedvariables: Vars{"username": "vedran"},
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/users/vedran/.config/myapp",
-				ExpectedPatterns:     []string{"/home/users/:username/.config/:application"},
-				ExpectedPlaceholders: PlaceholderMap{"username": "vedran", "application": "myapp"},
-				ExpectedMatch:        true,
+				Path:              "/home/users/vedran/.config/myapp",
+				ExpectedPatterns:  []string{"/home/users/:username/.config/:application"},
+				Expectedvariables: Vars{"username": "vedran", "application": "myapp"},
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/home/users/vedran/.config/myapp/",
-				ExpectedPatterns:     []string{"/home/users/:username/.config/:application/"},
-				ExpectedPlaceholders: PlaceholderMap{"username": "vedran", "application": "myapp"},
-				ExpectedMatch:        true,
+				Path:              "/home/users/vedran/.config/myapp/",
+				ExpectedPatterns:  []string{"/home/users/:username/.config/:application/"},
+				Expectedvariables: Vars{"username": "vedran", "application": "myapp"},
+				ExpectedMatch:     true,
 			},
 		},
 	},
 }
 
-func TestPlaceholderMatch(t *testing.T) {
-	RunMatchTests(t, MatchPlaceholderTests)
+func TestVariableMatch(t *testing.T) {
+	RunMatchTests(t, MatchVariableTests)
 }
 
-var MatchWildcardTests = []MatchTest{
+var MatchPrefixTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
-			"/users/+",
-			"/us+++/+",
-			"/users/+/.config/+",
-			"/users/+/.config/+nope",
+			"/home/+",
+			"/home/vedran/+",
 		},
 		Matches: []Match{
 			{
-				Path:                 "/users",
-				ExpectedPatterns:     []string{},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        false,
+				Path:              "/home",
+				ExpectedPatterns:  []string{},
+				Expectedvariables: nil,
+				ExpectedMatch:     false,
 			},
 			{
-				Path:                 "/users/",
-				ExpectedPatterns:     []string{"/users/+"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
-			},
-			{
-				Path:                 "/users/vedran",
-				ExpectedPatterns:     []string{"/users/+"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
-			},
-			{
-				Path:                 "/users/vedran/",
-				ExpectedPatterns:     []string{"/users/+"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
-			},
-			{
-				Path:                 "/users/vedran/.config",
-				ExpectedPatterns:     []string{"/users/+"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
-			},
-			{
-				Path:                 "/users/vedran/.config/",
-				ExpectedPatterns:     []string{"/users/+", "/users/+/.config/+"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
-			},
-			{
-				Path: "/users/vedran/.config/anything",
-				ExpectedPatterns: []string{
-					"/users/+",
-					"/users/+/.config/+",
-				},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home/vedran",
+				ExpectedPatterns:  []string{"/home/+"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 		},
 	},
 }
 
-func TestWildcardMatch(t *testing.T) {
-	RunMatchTests(t, MatchWildcardTests)
+func TestPrefixMatch(t *testing.T) {
+	RunMatchTests(t, MatchPrefixTests)
 }
 
 var MatchOverrideTests = []MatchTest{
@@ -315,22 +290,22 @@ var MatchOverrideTests = []MatchTest{
 		},
 		Matches: []Match{
 			{
-				Path:                 "/users/vedran/.config",
-				ExpectedPatterns:     []string{"!/users/vedran/.config"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/users/vedran/.config",
+				ExpectedPatterns:  []string{"!/users/vedran/.config"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/users/vedran/.config/stack",
-				ExpectedPatterns:     []string{"!/users/vedran/.config/stack"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/users/vedran/.config/stack",
+				ExpectedPatterns:  []string{"!/users/vedran/.config/stack"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
-				Path:                 "/file",
-				ExpectedPatterns:     []string{"!/file"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/file",
+				ExpectedPatterns:  []string{"!/file"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 		},
 	},
@@ -340,10 +315,10 @@ func TestOverrideMatch(t *testing.T) {
 	RunMatchTests(t, MatchOverrideTests)
 }
 
-var MatchCombinedTests = []MatchTest{
+var MatchCombinedTests1 = []MatchTest{
 	{
 		RegisteredPatterns: []string{
-			"/home/+",
+			"/home+",
 			"/home/:user",
 			"/home/:user/",
 			"!/home/:user/+",
@@ -351,17 +326,17 @@ var MatchCombinedTests = []MatchTest{
 		},
 		Matches: []Match{
 			{
-				Path:                 "/home/vedran/.config",
-				ExpectedPatterns:     []string{"!/home/:user/.config"},
-				ExpectedPlaceholders: PlaceholderMap{"user": "vedran"},
-				ExpectedMatch:        true,
+				Path:              "/home/vedran/.config",
+				ExpectedPatterns:  []string{"!/home/:user/.config"},
+				Expectedvariables: Vars{"user": "vedran"},
+				ExpectedMatch:     true,
 			},
 		},
 	},
 }
 
-func TestCombined(t *testing.T) {
-	RunMatchTests(t, MatchCombinedTests)
+func TestCombined1(t *testing.T) {
+	RunMatchTests(t, MatchCombinedTests1)
 }
 
 var MatchCombinedTests2 = []MatchTest{
@@ -373,10 +348,10 @@ var MatchCombinedTests2 = []MatchTest{
 		},
 		Matches: []Match{
 			{
-				Path:                 "/home/vedran/.config",
-				ExpectedPatterns:     []string{"/+"},
-				ExpectedPlaceholders: nil,
-				ExpectedMatch:        true,
+				Path:              "/home/vedran/.config",
+				ExpectedPatterns:  []string{"/+"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 		},
 	},
@@ -390,16 +365,16 @@ var MatchCombinedTests3 = []MatchTest{
 	{
 		RegisteredPatterns: []string{
 			"/",
-			"/home/:user/+",
+			"/home/:user+",
 			"!/etc",
 			"/usr",
 		},
 		Matches: []Match{
 			{
-				Path:                 "/home/vedran/.config",
-				ExpectedPatterns:     []string{"/home/:user/+"},
-				ExpectedPlaceholders: PlaceholderMap{"user": "vedran"},
-				ExpectedMatch:        true,
+				Path:              "/home/vedran/.config",
+				ExpectedPatterns:  []string{"/home/:user+"},
+				Expectedvariables: Vars{"user": "vedran"},
+				ExpectedMatch:     true,
 			},
 		},
 	},
@@ -407,6 +382,15 @@ var MatchCombinedTests3 = []MatchTest{
 
 func TestCombined3(t *testing.T) {
 	RunMatchTests(t, MatchCombinedTests3)
+}
+
+func TestWildcardMatcher(t *testing.T) {
+	vr := NewVarouter(false, '!', '/', ':', '+', '?', '*')
+	text := "sinferopopokatepetl"
+	wildcard := "sin*p?p?k?t?p*t?"
+	if vr.matchWildcard(&text, &wildcard) != true {
+		t.Fatal("MatchWildcard failed.")
+	}
 }
 
 func BenchmarkRegister(b *testing.B) {
@@ -426,13 +410,24 @@ func BenchmarkMatch(b *testing.B) {
 	}
 }
 
-type BenchTest struct {
-	Templates []string
-	Paths     []string
+func BenchmarkWildcard(b *testing.B) {
+	vr := NewVarouter(false, '!', '/', ':', '+', '?', '*')
+	text := "sinferopopokatepetl"
+	wildcard := "sin*p?p?k?t?p*t?"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		vr.matchWildcard(&text, &wildcard)
+	}
 }
 
-func makeRandomData(iterations int, maxPathElems, maxPathLength int) *BenchTest {
-	var data *BenchTest = &BenchTest{}
+// BenchData is the benchmark data.
+type BenchData struct {
+	Templates []string // Templates to register.
+	Paths     []string // Paths to test against registered templates.
+}
+
+func makeBenchData(iterations int, maxPathElems, maxPathLength int) *BenchData {
+	var data *BenchData = &BenchData{}
 	var NumTemplates int = iterations / maxPathElems
 	if NumTemplates <= 1 {
 		NumTemplates = iterations
@@ -447,7 +442,7 @@ func makeRandomData(iterations int, maxPathElems, maxPathLength int) *BenchTest 
 	for i := 0; i < NumTemplates; i++ {
 		path = ""
 		for i := 0; i < maxPathElems; i++ {
-			path += "/" + randomex.String(true, true, true, true, maxPathLength)
+			path += "/" + randomex.String(true, true, true, false, maxPathLength)
 			data.Paths = append(data.Paths, path)
 		}
 		data.Templates = append(data.Templates, path)
@@ -460,7 +455,7 @@ func makeRandomData(iterations int, maxPathElems, maxPathLength int) *BenchTest 
 
 func BenchmarkMatch_8ElemNumX8Namelen(b *testing.B) {
 	vr := New()
-	data := makeRandomData(b.N, 8, 8)
+	data := makeBenchData(b.N, 8, 8)
 	for _, template := range data.Templates {
 		vr.Register(template)
 	}
@@ -472,7 +467,7 @@ func BenchmarkMatch_8ElemNumX8Namelen(b *testing.B) {
 
 func BenchmarkMatch_64ElemNumX64Namelen(b *testing.B) {
 	vr := New()
-	data := makeRandomData(b.N, 64, 64)
+	data := makeBenchData(b.N, 64, 64)
 	for _, template := range data.Templates {
 		vr.Register(template)
 	}
@@ -484,7 +479,7 @@ func BenchmarkMatch_64ElemNumX64Namelen(b *testing.B) {
 
 func BenchmarkMatch_8ElemNumX64Namelen(b *testing.B) {
 	vr := New()
-	data := makeRandomData(b.N, 8, 64)
+	data := makeBenchData(b.N, 8, 64)
 	for _, template := range data.Templates {
 		vr.Register(template)
 	}
@@ -496,7 +491,7 @@ func BenchmarkMatch_8ElemNumX64Namelen(b *testing.B) {
 
 func BenchmarkMatch_64ElemNumX8Namelen(b *testing.B) {
 	vr := New()
-	data := makeRandomData(b.N, 64, 8)
+	data := makeBenchData(b.N, 64, 8)
 	for _, template := range data.Templates {
 		vr.Register(template)
 	}
@@ -509,9 +504,9 @@ func BenchmarkMatch_64ElemNumX8Namelen(b *testing.B) {
 func ExampleVarouter() {
 	vr := New()
 	vr.Register("/+")
-	vr.Register("/home/:username/+")
+	vr.Register("/dir/:var/+")
 
-	templates, params, matched := vr.Match("/home/vedran/.config")
+	templates, params, matched := vr.Match("/dir/val/abc")
 	fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-	// Output: Templates: '[/+ /home/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
+	// Output: Templates: '[/+ /dir/:var/+]', Params: 'map[var:val]', Matched: 'true'
 }
