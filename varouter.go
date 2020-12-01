@@ -3,13 +3,11 @@
 // license that can be found in the LICENSE file.
 
 // Package varouter implements a flexible path matching router with support for
-// variables and wildcards that does not suffer on performance with large
-// number of registered items.
+// variables and wildcards that does not suffer (greatly) on performance with
+// large number of registered items.
 package varouter
 
-import (
-	"errors"
-)
+import "errors"
 
 // Vars is a map of variable names to their values parsed from a path.
 type Vars map[string]string
@@ -73,30 +71,30 @@ type Varouter struct {
 
 // registerState maintains the template registration state.
 type registerState struct {
-	template *string
-	current  *element
-	cursor   int
-	marker   int
-	length   int
-	override bool
-	existing bool // existing template was retrieved.
+	template *string  // template being registered.
+	current  *element // current element being matched against.
+	cursor   int      // cursor is the template scan position.
+	marker   int      // marker is the position from which an element name is extracted, up to cursor.
+	length   int      // length is the length of template.
+	override bool     // override denotes template is an override.
+	existing bool     // existing template was retrieved.
 }
 
 // matchState maintains the path matching state.
 type matchState struct {
-	current     *element
-	path        *string
-	matches     *[]string
-	vars        *Vars
-	length      int
-	hasoverride bool
+	current     *element  // current element being matched against.
+	path        *string   // path being matched.
+	matches     *[]string // matches is a list templates matching path.
+	vars        *Vars     // vars hold the extracted variable values.
+	length      int       // length is the length of the path.
+	hasoverride bool      // hasoverride denotes an override match has been added to matches.
 }
 
 // New returns a new *Varouter instance with default configuration.
 func New() *Varouter { return NewVarouter(false, '!', '/', ':', '+', '?', '*') }
 
 // NewVarouter returns a new *Varouter instance with the given override,
-// separator, placeholder and wildcard character.
+// separator, variable, prefix, wildcard-one and wildcard-many characters.
 func NewVarouter(usewildcards bool, override, separator, variable, prefix, wildcardone, wildcardmany byte) *Varouter {
 	return &Varouter{
 		root:         newElement(),
@@ -119,25 +117,25 @@ func NewVarouter(usewildcards bool, override, separator, variable, prefix, wildc
 // For example, all of the following registration templates are legal:
 // "/home", "/home/", "/home//", "/home////users//", "../home", "/what/./the".
 //
-// A Wildcard template which will match a path if it is prefixed by it can be
-// defined by adding a Wildcard character suffix to the template where the
-// suffix appears as if instead of a name, e.g. "/home/users/+".
+// A Prefix template which will match a path if it is prefixed by it can be
+// defined by adding a Prefix character suffix to the template. For example:
+// "/+", "/edit+", "/home/+"
 //
-// Wildcard characters as part of the path element name are legal and registered
-// as is and are left to be interpreted by the user. For example:
-// "/usr/lib+", "/usr/lib+/bash", "/tests/+_test.go", "/home/users/+/.config".
+// Prefix characters as part of the path element name are not allowed and can
+// appear exclusively as a single suffix to the template being registered.
 //
-// Template path elements can be defined as Placeholders by prefixing the path
-// element with a Placeholder which matches the whole path element as a value
-// of the named path element and are returned as a map. For example:
+// Template path elements can be defined as Variables by prefixing the path
+// element with a Variable character which matches the whole path element as a
+// value of the named path element. For example:
 // "/home/users/:user", "/:item/:action/", "/movies/:id/comments/".
 //
-// Templates can be defined as overrides by prefixing the template with the
+// Templates can be defined as Overrides by prefixing the template with the
 // override character. This forces Match to return only one template regardless
 // if the path matches multiple templates and it will be an override template.
 // If more than one override templates Match a path, the override template with
 // the longest prefix wins. More specific matches of templates that are not
-// overrides after a matched override template are not considered.
+// overrides after a matched override template are not considered. Override
+// characters as part of template name are allowed.
 //
 // Only one Placeholder per registered template tree path element level is
 // allowed. For example:
@@ -189,7 +187,7 @@ func (vr *Varouter) Register(template string) (err error) {
 
 // matchOrInsert matches a single path element or inserts a new one if it does
 // not exist and updates element properties in the process.
-func (vr *Varouter) matchOrInsert(state *registerState) error {
+func (vr *Varouter) matchOrInsert(state *registerState) (err error) {
 	var name = (*state.template)[state.marker:state.cursor]
 	var namelen = len(name)
 	var prefix = name[namelen-1] == vr.prefix
@@ -213,10 +211,11 @@ func (vr *Varouter) matchOrInsert(state *registerState) error {
 	}
 	elem = newElement()
 	if prefix {
+		// Mark parent for match optimization.
 		state.current.hasprefixes = true
 	}
-	// Mark as wildcard for match optimization.
-	if elem.iswildcard = vr.hasWildcards(&name); elem.iswildcard {
+	if elem.iswildcard = vr.hasWildcards(&name, &namelen); elem.iswildcard {
+		// Mark parent for match optimization.
 		state.current.haswildcards = true
 	}
 	// Register as variable.
@@ -224,13 +223,12 @@ func (vr *Varouter) matchOrInsert(state *registerState) error {
 		return errors.New("varouter: element registration on a level with a variable")
 	}
 	if namelen > 1 && name[1] == vr.variable {
-		if namelen <= 2 {
-			return errors.New("varouter: empty variable name")
+		if err = vr.validateVariableName(&name, &namelen); err != nil {
+			return
 		}
 		if len(state.current.subs) > 0 {
 			return errors.New("varouter: multiple variable registrations on a path level")
 		}
-		// Technically, wildcards in variable names would work.
 		if elem.iswildcard {
 			return errors.New("varouter: variable names cannot contain wildcards")
 		}
@@ -251,10 +249,8 @@ func (vr *Varouter) matchOrInsert(state *registerState) error {
 }
 
 // hasWildcards returns if specified name contains wildcard characters.
-func (vr *Varouter) hasWildcards(name *string) bool {
-	var i int
-	var l = len(*name)
-	for i = 0; i < l; i++ {
+func (vr *Varouter) hasWildcards(name *string, namelen *int) bool {
+	for i := 0; i < *namelen; i++ {
 		if (*name)[i] == vr.wildcardone || (*name)[i] == vr.wildcardmany {
 			return true
 		}
@@ -262,13 +258,24 @@ func (vr *Varouter) hasWildcards(name *string) bool {
 	return false
 }
 
+// isValidVariableName returns an error if variable name is invalid.
+func (vr *Varouter) validateVariableName(name *string, namelen *int) error {
+	if *namelen <= 2 {
+		return errors.New("varouter: empty variable name")
+	}
+	for i := 2; i < *namelen; i++ {
+		if (*name)[i] == vr.variable {
+			return errors.New("varouter: invalid variable name")
+		}
+	}
+	return nil
+}
+
 // Match matches a path against registered templates and returns the names of
 // matched templates, a map of parsed param names to param values and a bool
 // indicating if a match occured and previous two result vars are valid.
 //
-// Returned template names will consist of possibly one or more Wildcard
-// templates that matched the path and possibly a template that matched the
-// path exactly, regardless if template has any placeholders.
+// See Register for details on how the path is matched against templates.
 //
 // If no templates were matched the resulting templates will be nil.
 // If no params were parsed from the path the resulting ParamMap wil be nil.
@@ -392,8 +399,9 @@ func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool
 	return true
 }
 
-// maybeAddMatch maybe adds the current level to matrches if:
-// This level is a prefix template.
+// maybeAddMatch maybe adds the current level to state.matches if:
+// This level is not a prefix template.
+// State.current item is the last element of a registered template.
 // This is the last level being matched and depth matches tested path.
 // Matches are replaced if current level is a match and an override.
 func (vr *Varouter) maybeAddMatch(cursor *int, state *matchState) (added bool) {
@@ -411,7 +419,7 @@ func (vr *Varouter) maybeAddMatch(cursor *int, state *matchState) (added bool) {
 	return vr.addMatch(cursor, state)
 }
 
-// addMatch help.
+// addMatch adds state.current.template to a list of matches.
 func (vr *Varouter) addMatch(cursor *int, state *matchState) (added bool) {
 	// If current match is an override, clear other matches.
 	if state.current.isoverride {
@@ -435,7 +443,7 @@ func (vr *Varouter) addMatch(cursor *int, state *matchState) (added bool) {
 	return false
 }
 
-// matchWildcard returns truth if text matches wildcard.
+// matchWildcard returns truth if text matches wildcard. Bytescan.
 func (vr *Varouter) matchWildcard(text, wildcard *string) bool {
 	var lt, lw int = len(*text), len(*wildcard)
 	if lt == 0 || lw == 0 {

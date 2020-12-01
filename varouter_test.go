@@ -75,24 +75,33 @@ var RegistrationTests = []RegistrationData{
 	{"/:+/", true, "Failed detecting invalid pattern."},
 	{"/+:", true, "Failed detecting invalid pattern."},
 	{"/+:/", true, "Failed detecting invalid pattern."},
-	{":no", true, "Failed detecting invalid pattern."},
-	{":no/", true, "Failed detecting invalid pattern."},
-	{":no/+", true, "Failed detecting invalid pattern."},
-	{":no+", true, "Failed detecting invalid pattern."},
-	{":no++", true, "Failed detecting invalid pattern."},
-	{":no+/", true, "Failed detecting invalid pattern."},
-	{":no++/", true, "Failed detecting invalid pattern."},
+	{":no", true, "Failed detecting invalid variable name."},
+	{":no:", true, "Failed detecting invalid variable name."},
+	{":no/", true, "Failed detecting invalid variable name."},
+	{":no/+", true, "Failed detecting invalid variable name."},
+	{":no+", true, "Failed detecting invalid variable name."},
+	{":no++", true, "Failed detecting invalid variable name."},
+	{":no+/", true, "Failed detecting invalid variable name."},
+	{":no++/", true, "Failed detecting invalid variable name."},
+	{"/:no:", true, "Failed detecting invalid variable name."},
+	{"!/:no:", true, "Failed detecting invalid variable name."},
+	{"/:no:+", true, "Failed detecting invalid variable name."},
+	{"!/:no:+", true, "Failed detecting invalid variable name."},
+	{"/:no*", true, "Failed detecting wildcard in variable name."},
+	{"!/:no*", true, "Failed detecting wildcard in variable name."},
+	{"/:no*+", true, "Failed detecting wildcard in variable name."},
+	{"!/:no*+", true, "Failed detecting wildcard in variable name."},
 	{"/", false, ""},
 	{"/+", true, "Failed detecting existing template."},
-	{"/a", false, ""},
-	{"/a+", true, "Failed detecting existing template."},
+	{"/a+", false, ""},
+	{"/a", true, "Failed detecting existing template."},
+	{"!/a", true, "Failed detecting existing template."},
 	{"/a*", false, ""},
 	{"/a/*", false, ""},
 	{"/a/b", false, ""},
 	{"/a/b/:c", false, ""},
 	{"/a/b/:d", true, "Failed detecting variable being registered on a path level with registered elements."},
 	{"/a/b/:c/:d", false, ""},
-	{"!/a", true, "Failed detecting existing template."},
 	{"!/b", false, ""},
 	{"!/b/c", false, ""},
 }
@@ -390,6 +399,33 @@ func TestOverrideMatch(t *testing.T) {
 	RunMatchTests(t, MatchOverrideTests)
 }
 
+var MatchWildcardTests = []MatchTest{
+	{
+		RegisteredPatterns: []string{
+			"/h*m?",
+			"/h*e/u*s/???ran",
+		},
+		Matches: []Match{
+			{
+				Path:              "/home",
+				ExpectedPatterns:  []string{"/h*m?"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/home/users/vedran",
+				ExpectedPatterns:  []string{"/h*e/u*s/???ran"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+		},
+	},
+}
+
+func TestWildcardMatch(t *testing.T) {
+	RunMatchTests(t, MatchWildcardTests)
+}
+
 var MatchCombinedTests1 = []MatchTest{
 	{
 		RegisteredPatterns: []string{
@@ -456,6 +492,33 @@ var MatchCombinedTests3 = []MatchTest{
 
 func TestCombined3(t *testing.T) {
 	RunMatchTests(t, MatchCombinedTests3)
+}
+
+var MatchCombinedTests4 = []MatchTest{
+	{
+		RegisteredPatterns: []string{
+			"/home/:user/t*p",
+			"/home/:user/t*p/:file",
+		},
+		Matches: []Match{
+			{
+				Path:              "/home/vedran/temp",
+				ExpectedPatterns:  []string{"/home/:user/t*p"},
+				Expectedvariables: Vars{"user": "vedran"},
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/home/vedran/temp/test",
+				ExpectedPatterns:  []string{"/home/:user/t*p/:file"},
+				Expectedvariables: Vars{"user": "vedran", "file": "test"},
+				ExpectedMatch:     true,
+			},
+		},
+	},
+}
+
+func TestCombined4(t *testing.T) {
+	RunMatchTests(t, MatchCombinedTests4)
 }
 
 func TestWildcardMatcher(t *testing.T) {

@@ -13,14 +13,12 @@ The additional servemux package demonstrates wrapping varouter into a mux compat
 ## Example
 
 ```Go
-vr := New()
 vr.Register("/+")
-vr.Register("/home/:username/+")
+vr.Register("/dir/:var/+")
 
-templates, params, matched := vr.Match("/home/vedran/.config")
-
+templates, params, matched := vr.Match("/dir/val/abc")
 fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, matched)
-// Output: Templates: '[/+ /home/:username/+]', Params: 'map[username:vedran]', Matched: 'true'
+// Output: Templates: '[/+ /dir/:var/+]', Params: 'map[var:val]', Matched: 'true'
 ```
 
 ## Features
@@ -32,11 +30,7 @@ fmt.Printf("Templates: '%v', Params: '%v', Matched: '%t'\n", templates, params, 
 
 ## Status
 
-Work in progress.
-
-* API _could_ still change, but really, not by a lot.
-* Will add possibility to register multiple wildcards from a single template.
-* Requires further testing and few bugs to remove.
+Complete. May be further optimized but is quick as it is.
 
 ## License
 
