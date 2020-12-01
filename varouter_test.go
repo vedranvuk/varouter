@@ -353,12 +353,8 @@ var MatchOverrideTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
 			"/+",
-			"!/file",
-			"/users/+",
-			"/users/vedran/+",
-			"!/users/vedran/.config",
-			"!/users/vedran/.config/+",
-			"!/users/vedran/.config/stack",
+			"!/home+",
+			"!/home/+",
 		},
 		Matches: []Match{
 			{
@@ -368,26 +364,20 @@ var MatchOverrideTests = []MatchTest{
 				ExpectedMatch:     true,
 			},
 			{
-				Path:              "/random",
-				ExpectedPatterns:  []string{"/+"},
+				Path:              "/home",
+				ExpectedPatterns:  []string{"!/home+"},
 				Expectedvariables: nil,
 				ExpectedMatch:     true,
 			},
 			{
-				Path:              "/file",
-				ExpectedPatterns:  []string{"!/file"},
+				Path:              "/home/",
+				ExpectedPatterns:  []string{"!/home/+"},
 				Expectedvariables: nil,
 				ExpectedMatch:     true,
 			},
 			{
-				Path:              "/users/vedran/.config",
-				ExpectedPatterns:  []string{"!/users/vedran/.config"},
-				Expectedvariables: nil,
-				ExpectedMatch:     true,
-			},
-			{
-				Path:              "/users/vedran/.config/stack",
-				ExpectedPatterns:  []string{"!/users/vedran/.config/stack"},
+				Path:              "/home/user",
+				ExpectedPatterns:  []string{"!/home/+"},
 				Expectedvariables: nil,
 				ExpectedMatch:     true,
 			},
