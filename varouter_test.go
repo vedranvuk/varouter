@@ -353,6 +353,24 @@ var MatchOverrideTests = []MatchTest{
 		},
 		Matches: []Match{
 			{
+				Path:              "/",
+				ExpectedPatterns:  []string{"/+"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/random",
+				ExpectedPatterns:  []string{"/+"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/file",
+				ExpectedPatterns:  []string{"!/file"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
 				Path:              "/users/vedran/.config",
 				ExpectedPatterns:  []string{"!/users/vedran/.config"},
 				Expectedvariables: nil,
@@ -361,12 +379,6 @@ var MatchOverrideTests = []MatchTest{
 			{
 				Path:              "/users/vedran/.config/stack",
 				ExpectedPatterns:  []string{"!/users/vedran/.config/stack"},
-				Expectedvariables: nil,
-				ExpectedMatch:     true,
-			},
-			{
-				Path:              "/file",
-				ExpectedPatterns:  []string{"!/file"},
 				Expectedvariables: nil,
 				ExpectedMatch:     true,
 			},
@@ -527,6 +539,20 @@ func BenchmarkMatch_8ElemNumX8Namelen(b *testing.B) {
 	}
 }
 
+func BenchmarkMatch_8ElemNumX8NamelenPrealloc(b *testing.B) {
+	vr := New()
+	vars := make(Vars)
+	matches := make([]string, 0, 64)
+	data := makeBenchData(b.N, 8, 8)
+	for _, template := range data.Templates {
+		vr.Register(template)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		vr.MatchTo(&data.Paths[i], &matches, &vars)
+	}
+}
+
 func BenchmarkMatch_64ElemNumX64Namelen(b *testing.B) {
 	vr := New()
 	data := makeBenchData(b.N, 64, 64)
@@ -536,6 +562,20 @@ func BenchmarkMatch_64ElemNumX64Namelen(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		vr.Match(data.Paths[i])
+	}
+}
+
+func BenchmarkMatch_64ElemNumX64NamelenPrealloc(b *testing.B) {
+	vr := New()
+	vars := make(Vars)
+	matches := make([]string, 0, 64)
+	data := makeBenchData(b.N, 64, 64)
+	for _, template := range data.Templates {
+		vr.Register(template)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		vr.MatchTo(&data.Paths[i], &matches, &vars)
 	}
 }
 

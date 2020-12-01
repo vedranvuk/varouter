@@ -48,7 +48,7 @@ func newElement() *element { return &element{subs: make(elements)} }
 
 // Varouter is a flexible path matching router with support for path element
 // variables and wildcards for matching multiple templates that does not suffer
-// on large number of registered items.
+// (greatly) on large number of registered items.
 //
 // Register parses a template path, splits it on path separators and builds a
 // tree of registered paths using maps.
@@ -82,7 +82,7 @@ type registerState struct {
 	existing bool // existing template was retrieved.
 }
 
-// matchState maintains the match state.
+// matchState maintains the path matching state.
 type matchState struct {
 	current     *element
 	path        *string
@@ -273,19 +273,35 @@ func (vr *Varouter) hasWildcards(name *string) bool {
 // If no templates were matched the resulting templates will be nil.
 // If no params were parsed from the path the resulting ParamMap wil be nil.
 func (vr *Varouter) Match(path string) (matches []string, vars Vars, matched bool) {
+	vars = make(Vars)
+	matched = vr.match(&path, &matches, &vars)
+	return
+}
+
+// MatchTo is a potentially faster version of Match that takes pointers to
+// preallocated inputs and outputs. All paramaters must be valid pointers.
+// Path is a pointer to a string to match registered templates against.
+// Matches is a pointer to a slice that needs to have enough match capacity.
+// Vars is a pointer to a map into which parsed variables will be stored into.
+// Returns a boolean denoting if anything was matched.
+func (vr *Varouter) MatchTo(path *string, matches *[]string, vars *Vars) bool {
+	return vr.match(path, matches, vars)
+}
+
+// match is the implementation of Match and MatchTo.
+func (vr *Varouter) match(path *string, matches *[]string, vars *Vars) bool {
 	var state = matchState{
 		current: vr.root,
-		path:    &path,
-		length:  len(path),
-		matches: &matches,
-		vars:    &vars,
+		path:    path,
+		length:  len(*path),
+		matches: matches,
+		vars:    vars,
 	}
 	if state.length < 1 {
-		return nil, nil, false
+		return false
 	}
-	vars = make(Vars)
 	vr.nextLevel(0, &state)
-	return matches, vars, len(matches) > 0
+	return len(*matches) > 0
 }
 
 // nextLevel advances matching to the next path level.
@@ -303,7 +319,8 @@ func (vr *Varouter) nextLevel(marker int, state *matchState) {
 	vr.matchLevel(cursor, marker, state)
 }
 
-// matchLevel help.
+// matchLevel matches a path level against one or more corresponding registered
+// template levels. Result denotes if matching should continue.
 func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool) {
 	// End of template reached.
 	if marker > state.length {
@@ -317,7 +334,6 @@ func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool
 		name = (*state.path)[marker:cursor]
 	}
 	var namelen = len(name)
-	// fmt.Printf("? MatchLevel: Path: '%s', Name: '%s', Cursor: '%d', Marker: '%d', Length: '%d'\n", *state.path, name, cursor, marker, state.length)
 	if name == "" {
 		return
 	}
