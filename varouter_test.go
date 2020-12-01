@@ -6,29 +6,111 @@ package varouter
 
 import (
 	"fmt"
-	"sort"
+	"strings"
 	"testing"
 
 	"github.com/vedranvuk/randomex"
 )
 
-// debugPrintElements recursively prints out all elements in e.
-func debugPrintElements(e *element) {
-	for key, val := range e.subs {
-		fmt.Printf(`Sub:  '%s'
-NumSubs:   '%d'
-Template:   '%s'
-IsOverride:  '%t'
-IsPrefix:  '%t'
-IsWildcard:  '%t'
-HasVariable: '%s'
-HasWildcards: '%t'
+// DebugPrintElements prints Varouter internals.
+func DebugPrintElements(vr *Varouter) {
+	fmt.Printf(`Varouter:	
+Template count:     '%d'
+Override char:      '%s'
+Separator char:     '%s'
+Variable char:      '%s'
+Prefix char:        '%s'
+Wildcard One char : '%s'
+Wildcard Many char: '%s'
+`, vr.count, string(vr.override), string(vr.separator), string(vr.variable),
+		string(vr.prefix), string(vr.wildcardone), string(vr.wildcardmany))
+	fmt.Println()
+	fmt.Println("Root:")
+	fmt.Println()
+	debugPrintElement(vr.root, 0)
+	fmt.Println()
+	fmt.Println("Subs:")
+	fmt.Println()
+	debugPrintElements(vr.root, 1)
+	fmt.Println(vr.DefinedTemplates())
+	fmt.Println()
+}
 
-`, key, len(val.subs), val.template, val.isoverride, val.isprefix, val.iswildcard, val.hasvariable, val.haswildcards)
-		debugPrintElements(val)
+func debugPrintElement(e *element, indent int) {
+	ind := strings.Repeat("\t", indent)
+	fmt.Printf("%sNum subs:           '%d'\n", ind, len(e.subs))
+	fmt.Printf("%sTemplate:           '%s'\n", ind, e.template)
+	fmt.Printf("%sIs Override:        '%t'\n", ind, e.isoverride)
+	fmt.Printf("%sIs Prefix:          '%t'\n", ind, e.isprefix)
+	fmt.Printf("%sIs Wildcard:        '%t'\n", ind, e.iswildcard)
+	fmt.Printf("%sHas Variable:       '%s'\n", ind, e.hasvariable)
+	fmt.Printf("%sHas Prefixes:       '%t'\n", ind, e.hasprefixes)
+	fmt.Printf("%sHas Wildcards:      '%t'\n", ind, e.haswildcards)
+}
+
+func debugPrintElements(e *element, indent int) {
+	for key, val := range e.subs {
+		ind := strings.Repeat("\t", indent)
+		fmt.Printf("%sElement:            '%s'\n", ind, key)
+		debugPrintElement(val, indent)
+		fmt.Println()
+		debugPrintElements(val, indent+1)
 	}
 }
 
+// RegistrationData is a registration test data.
+type RegistrationData struct {
+	Pattern     string // Pattern to register.
+	ExpectErr   bool   // ExpectErr denotes if an error is expected.
+	FailMessage string // FailMessage is displayed if the test fails.
+}
+
+var RegistrationTests = []RegistrationData{
+	{"", true, "Failed detecting invalid pattern."},
+	{"no", true, "Failed detecting invalid pattern."},
+	{"/++", true, "Failed detecting invalid pattern."},
+	{"/:", true, "Failed detecting invalid pattern."},
+	{"/:/", true, "Failed detecting invalid pattern."},
+	{"/:+", true, "Failed detecting invalid pattern."},
+	{"/:+/", true, "Failed detecting invalid pattern."},
+	{"/+:", true, "Failed detecting invalid pattern."},
+	{"/+:/", true, "Failed detecting invalid pattern."},
+	{":no", true, "Failed detecting invalid pattern."},
+	{":no/", true, "Failed detecting invalid pattern."},
+	{":no/+", true, "Failed detecting invalid pattern."},
+	{":no+", true, "Failed detecting invalid pattern."},
+	{":no++", true, "Failed detecting invalid pattern."},
+	{":no+/", true, "Failed detecting invalid pattern."},
+	{":no++/", true, "Failed detecting invalid pattern."},
+	{"/", false, ""},
+	{"/+", true, "Failed detecting existing template."},
+	{"/a", false, ""},
+	{"/a+", true, "Failed detecting existing template."},
+	{"/a*", false, ""},
+	{"/a/*", false, ""},
+	{"/a/b", false, ""},
+	{"/a/b/:c", false, ""},
+	{"/a/b/:d", true, "Failed detecting variable being registered on a path level with registered elements."},
+	{"/a/b/:c/:d", false, ""},
+	{"!/a", true, "Failed detecting existing template."},
+	{"!/b", false, ""},
+	{"!/b/c", false, ""},
+}
+
+func TestRegister(t *testing.T) {
+	vr := New()
+	for _, test := range RegistrationTests {
+		err := vr.Register(test.Pattern)
+		if test.ExpectErr != (err != nil) {
+			if test.FailMessage != "" {
+				t.Fatal(test.FailMessage + fmt.Sprintf(": %s", test.Pattern))
+			}
+			t.Fatal(err)
+		}
+	}
+}
+
+// FailMatchTest fails a Match test and prints error details.
 func FailMatchTest(t *testing.T, match Match, result []string, ph Vars, expected bool) {
 	t.Fatalf(`
 	Match failed,
@@ -38,14 +120,6 @@ func FailMatchTest(t *testing.T, match Match, result []string, ph Vars, expected
 	  Patterns:     '%#+v'
 	  variables: '%#+v'
 	  Matched:      '%#+v'`, match, result, ph, expected)
-}
-
-// DebugPrintElements prints out all elements in Varouter.
-func DebugPrintElements(vr *Varouter) {
-	debugPrintElements(vr.root)
-	tmpls := vr.DefinedTemplates()
-	sort.Strings(tmpls)
-	fmt.Println(tmpls)
 }
 
 // RunMatchTests runs match tests.
@@ -89,42 +163,6 @@ func RunMatchTests(t *testing.T, tests []MatchTest) {
 	}
 }
 
-type RegistrationTest struct {
-	Pattern     string
-	ExpectErr   bool
-	FailMessage string
-}
-
-var RegistrationTests = []RegistrationTest{
-	{"", true, "Failed detecting empty pattern."},
-	{"h", true, "Failed detecting invalid pattern."},
-	{"/", false, ""},
-	{"/:", true, "Failed detecting invalid variable pattern."},
-	{"/home", false, ""},
-	{"/home*", false, ""},
-	{"/home/*", false, ""},
-	{":cantregisterthis", true, "Failed detecting variable being registered on a path level with registered elements."},
-	{":cantregisterthis/", true, "Failed detecting variable being registered on a path level with registered elements."},
-	{"/home/users", false, ""},
-	{"/home/users/:user", false, ""},
-	{"/home/users/:username", true, "Failed detecting variable being registered on a path level with registered elements."},
-	{"/home/users/vedran", true, "Failed detecting variable being registered on a path level with registered elements."},
-	{"/home/users/vedran/.config", true, "Failed detecting variable being registered on a path level with registered elements."},
-}
-
-func TestRegister(t *testing.T) {
-	vr := New()
-	for _, test := range RegistrationTests {
-		err := vr.Register(test.Pattern)
-		if test.ExpectErr != (err != nil) {
-			if test.FailMessage != "" {
-				t.Fatal(test.FailMessage)
-			}
-			t.Fatal(err)
-		}
-	}
-}
-
 // Match is a definition of expected match results.
 type Match struct {
 	Path              string   // Path to test against.
@@ -150,6 +188,7 @@ var MatchExactTests = []MatchTest{
 			"/home/users//",
 			"/home//users/",
 			"///home///users///",
+			"/-_-/<_</>_>/",
 		},
 		Matches: []Match{
 			{
@@ -197,6 +236,18 @@ var MatchExactTests = []MatchTest{
 			{
 				Path:              "///home///users///",
 				ExpectedPatterns:  []string{"///home///users///"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "///home///users///",
+				ExpectedPatterns:  []string{"///home///users///"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/-_-/<_</>_>/",
+				ExpectedPatterns:  []string{"/-_-/<_</>_>/"},
 				Expectedvariables: nil,
 				ExpectedMatch:     true,
 			},
@@ -252,19 +303,32 @@ func TestVariableMatch(t *testing.T) {
 var MatchPrefixTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
+			"/+",
 			"/home/+",
 			"/home/vedran/+",
 		},
 		Matches: []Match{
 			{
-				Path:              "/home",
-				ExpectedPatterns:  []string{},
+				Path:              "/",
+				ExpectedPatterns:  []string{"/+"},
 				Expectedvariables: nil,
-				ExpectedMatch:     false,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/home",
+				ExpectedPatterns:  []string{"/+"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
 			},
 			{
 				Path:              "/home/vedran",
-				ExpectedPatterns:  []string{"/home/+"},
+				ExpectedPatterns:  []string{"/+", "/home/+"},
+				Expectedvariables: nil,
+				ExpectedMatch:     true,
+			},
+			{
+				Path:              "/home/vedran/test",
+				ExpectedPatterns:  []string{"/+", "/home/+", "/home/vedran/+"},
 				Expectedvariables: nil,
 				ExpectedMatch:     true,
 			},
@@ -279,7 +343,6 @@ func TestPrefixMatch(t *testing.T) {
 var MatchOverrideTests = []MatchTest{
 	{
 		RegisteredPatterns: []string{
-			"/",
 			"/+",
 			"!/file",
 			"/users/+",
@@ -320,7 +383,6 @@ var MatchCombinedTests1 = []MatchTest{
 		RegisteredPatterns: []string{
 			"/home+",
 			"/home/:user",
-			"/home/:user/",
 			"!/home/:user/+",
 			"!/home/:user/.config",
 		},

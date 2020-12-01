@@ -35,6 +35,9 @@ type element struct {
 	isoverride bool
 	// iswildcard specifies if this element name has wildcards.
 	iswildcard bool
+	// hasprefixes specifies that one or more subs of this element have
+	// prefix names.
+	hasprefixes bool
 	// haswildcards specifies that one or more subs of this element have
 	// wildcards in the name.
 	haswildcards bool
@@ -66,6 +69,27 @@ type Varouter struct {
 	prefix       byte // Prefix is the character that prefix character to use. Default: '+'.
 	wildcardone  byte // Wildcardone is the character that matches any one character. Default: '?'.
 	wildcardmany byte // WIldcardmany is the character that matches one or more characters. Default: '*';
+}
+
+// registerState maintains the template registration state.
+type registerState struct {
+	template *string
+	current  *element
+	cursor   int
+	marker   int
+	length   int
+	override bool
+	existing bool // existing template was retrieved.
+}
+
+// matchState maintains the match state.
+type matchState struct {
+	current     *element
+	path        *string
+	matches     *[]string
+	vars        *Vars
+	length      int
+	hasoverride bool
 }
 
 // New returns a new *Varouter instance with default configuration.
@@ -152,6 +176,9 @@ func (vr *Varouter) Register(template string) (err error) {
 	if err = vr.matchOrInsert(&state); err != nil {
 		return err
 	}
+	if state.existing {
+		return errors.New("varouter: template already registered")
+	}
 	// Mark the last element as override.
 	if state.override {
 		state.current.isoverride = true
@@ -160,20 +187,16 @@ func (vr *Varouter) Register(template string) (err error) {
 	return nil
 }
 
-// registerState maintains the template registration state.
-type registerState struct {
-	template *string
-	current  *element
-	cursor   int
-	marker   int
-	length   int
-	override bool
-}
-
 // matchOrInsert matches a single path element or inserts a new one if it does
 // not exist and updates element properties in the process.
 func (vr *Varouter) matchOrInsert(state *registerState) error {
 	var name = (*state.template)[state.marker:state.cursor]
+	var namelen = len(name)
+	var prefix = name[namelen-1] == vr.prefix
+	if prefix {
+		name = name[:namelen-1]
+		namelen--
+	}
 	var elem *element
 	var exists bool
 	// Try exact match first.
@@ -185,15 +208,13 @@ func (vr *Varouter) matchOrInsert(state *registerState) error {
 		}
 		// Update state and advance to next registered level.
 		state.current = elem
+		state.existing = true
 		return nil
 	}
-	var namelen = len(name)
-	var prefix = name[namelen-1] == vr.prefix
-	if prefix {
-		name = name[:namelen-1]
-		namelen--
-	}
 	elem = newElement()
+	if prefix {
+		state.current.hasprefixes = true
+	}
 	// Mark as wildcard for match optimization.
 	if elem.iswildcard = vr.hasWildcards(&name); elem.iswildcard {
 		state.current.haswildcards = true
@@ -224,6 +245,7 @@ func (vr *Varouter) matchOrInsert(state *registerState) error {
 	// Add item.
 	state.current.subs[name] = elem
 	state.current = elem
+	state.existing = false
 	vr.count++
 	return nil
 }
@@ -266,16 +288,6 @@ func (vr *Varouter) Match(path string) (matches []string, vars Vars, matched boo
 	return matches, vars, len(matches) > 0
 }
 
-// matchState maintains the match state.
-type matchState struct {
-	current     *element
-	path        *string
-	matches     *[]string
-	vars        *Vars
-	length      int
-	hasoverride bool
-}
-
 // nextLevel advances matching to the next path level.
 func (vr *Varouter) nextLevel(marker int, state *matchState) {
 	var cursor int
@@ -293,16 +305,18 @@ func (vr *Varouter) nextLevel(marker int, state *matchState) {
 
 // matchLevel help.
 func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool) {
-	// Match by name.
+	// End of template reached.
 	if marker > state.length {
 		return true
 	}
+	// Extract current level name.
 	var name string
 	if cursor >= state.length {
 		name = (*state.path)[marker:]
 	} else {
 		name = (*state.path)[marker:cursor]
 	}
+	var namelen = len(name)
 	// fmt.Printf("? MatchLevel: Path: '%s', Name: '%s', Cursor: '%d', Marker: '%d', Length: '%d'\n", *state.path, name, cursor, marker, state.length)
 	if name == "" {
 		return
@@ -313,40 +327,44 @@ func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool
 	if state.current.hasvariable != "" {
 		(*state.vars)[state.current.hasvariable[2:]] = (*state.path)[marker+1 : cursor]
 		state.current = state.current.subs[state.current.hasvariable]
-		if vr.maybeAddMatch(&cursor, state) {
-			return true
+		if state.current.isprefix {
+			stop = vr.addMatch(&cursor, state)
+		} else {
+			stop = vr.maybeAddMatch(&cursor, state)
+		}
+		if stop {
+			return
 		}
 		cursor += len(name)
 		vr.nextLevel(cursor, state)
 		return
 	}
-	// If element subs have any wildcard names, match against them.
+	// Iterate subs if required.
 	var subname string
+	var subnamelen int
 	var subelem *element
 	var saveelem = state.current
-	if state.current.haswildcards {
+	if state.current.haswildcards || state.current.hasprefixes {
 		for subname, subelem = range state.current.subs {
-			if !subelem.iswildcard {
-				continue
+			subnamelen = len(subname)
+			// Match against any wildcards.
+			if subelem.iswildcard && vr.matchWildcard(&name, &subname) {
+				state.current = subelem
+				vr.maybeAddMatch(&cursor, state)
+				vr.nextLevel(cursor, state)
+				state.current = saveelem
 			}
-			if !vr.matchWildcard(&name, &subname) {
-				continue
+			// Match agains any prefixes.
+			if subelem.isprefix && namelen >= subnamelen && name[0:subnamelen] == subname {
+				state.current = subelem
+				vr.addMatch(&cursor, state)
+				vr.nextLevel(cursor, state)
+				state.current = saveelem
 			}
-			state.current = subelem
-			vr.maybeAddMatch(&cursor, state)
-			vr.nextLevel(cursor, state)
 		}
-		state.current = saveelem
 	}
+	// Finally, try an exact match.
 	var exists bool
-	// Check for prefix at element root.
-	if subelem, exists = state.current.subs[string(vr.separator)]; exists && subelem.isprefix {
-		saveelem = state.current
-		state.current = subelem
-		vr.maybeAddMatch(&cursor, state)
-		state.current = saveelem
-	}
-	// If element has a normal name, try an exact match.
 	if subelem, exists = state.current.subs[name]; exists {
 		state.current = subelem
 		if vr.maybeAddMatch(&cursor, state) {
@@ -363,9 +381,8 @@ func (vr *Varouter) matchLevel(cursor, marker int, state *matchState) (stop bool
 // This is the last level being matched and depth matches tested path.
 // Matches are replaced if current level is a match and an override.
 func (vr *Varouter) maybeAddMatch(cursor *int, state *matchState) (added bool) {
-	// If this level is a prefix template it's a match.
 	if state.current.isprefix {
-		goto add
+		return false
 	}
 	// Current level must be the last element of a registered template.
 	if state.current.template == "" {
@@ -375,7 +392,11 @@ func (vr *Varouter) maybeAddMatch(cursor *int, state *matchState) (added bool) {
 	if *cursor < state.length {
 		return false
 	}
-add:
+	return vr.addMatch(cursor, state)
+}
+
+// addMatch help.
+func (vr *Varouter) addMatch(cursor *int, state *matchState) (added bool) {
 	// If current match is an override, clear other matches.
 	if state.current.isoverride {
 		state.hasoverride = true
