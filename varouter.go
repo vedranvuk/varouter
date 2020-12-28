@@ -7,7 +7,20 @@
 // large number of registered items.
 package varouter
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+var (
+	// ErrVarouter is the base varouter package error.
+	ErrVarouter = errors.New("varouter")
+
+	// ErrRegister is base registration error.
+	ErrRegister = fmt.Errorf("%w: register", ErrVarouter)
+	// ErrDuplicate is returned when a duplicate template is specified.
+	ErrDuplicate = fmt.Errorf("%w: duplicate template", ErrRegister)
+)
 
 // Vars is a map of variable names to their values parsed from a path.
 type Vars map[string]string
@@ -146,11 +159,11 @@ func (vr *Varouter) Register(template string) (err error) {
 	state.template = &template
 	state.current = vr.root
 	if state.length = len(template); state.length < 1 {
-		return errors.New("varouter: empty template name")
+		return fmt.Errorf("%w: empty template name", ErrRegister)
 	}
 	for state.cursor = 0; state.cursor < state.length; state.cursor++ {
 		if template[state.cursor] == vr.prefix && state.cursor < state.length-1 {
-			return errors.New("varouter: prefix character allowed only as suffix")
+			return fmt.Errorf("%w: prefix character allowed only as suffix", ErrRegister)
 		}
 	}
 	state.cursor = 1
@@ -160,7 +173,7 @@ func (vr *Varouter) Register(template string) (err error) {
 		state.cursor++
 	}
 	if (*state.template)[state.marker] != vr.separator {
-		return errors.New("varouter: invalid template")
+		return fmt.Errorf("%w: invalid template", ErrRegister)
 	}
 	for ; state.cursor < state.length; state.cursor++ {
 		if (*state.template)[state.cursor] != vr.separator {
@@ -175,7 +188,7 @@ func (vr *Varouter) Register(template string) (err error) {
 		return err
 	}
 	if state.existing {
-		return errors.New("varouter: template already registered")
+		return fmt.Errorf("%w: '%s'", ErrDuplicate, template)
 	}
 	// Mark the last element as override.
 	if state.override {
@@ -202,7 +215,7 @@ func (vr *Varouter) matchOrInsert(state *registerState) (err error) {
 		// If last element being matched and this registered element
 		// is not a template, error out.
 		if state.cursor == state.length && state.current.template != "" {
-			return errors.New("varouter: template '" + elem.template + "' already registered")
+			return fmt.Errorf("%w: '%s'", ErrDuplicate, elem.template)
 		}
 		// Update state and advance to next registered level.
 		state.current = elem
@@ -220,17 +233,17 @@ func (vr *Varouter) matchOrInsert(state *registerState) (err error) {
 	}
 	// Register as variable.
 	if state.current.hasvariable != "" {
-		return errors.New("varouter: element registration on a level with a variable")
+		return fmt.Errorf("%w: element registration on a level with a variable", ErrRegister)
 	}
 	if namelen > 1 && name[1] == vr.variable {
 		if err = vr.validateVariableName(&name, &namelen); err != nil {
 			return
 		}
 		if len(state.current.subs) > 0 {
-			return errors.New("varouter: multiple variable registrations on a path level")
+			return fmt.Errorf("%w: multiple variable registrations on a path level", ErrRegister)
 		}
 		if elem.iswildcard {
-			return errors.New("varouter: variable names cannot contain wildcards")
+			return fmt.Errorf("%w: variable names cannot contain wildcards", ErrRegister)
 		}
 		state.current.hasvariable = name
 	}
@@ -261,11 +274,11 @@ func (vr *Varouter) hasWildcards(name *string, namelen *int) bool {
 // isValidVariableName returns an error if variable name is invalid.
 func (vr *Varouter) validateVariableName(name *string, namelen *int) error {
 	if *namelen <= 2 {
-		return errors.New("varouter: empty variable name")
+		return fmt.Errorf("%w: empty variable name", ErrRegister)
 	}
 	for i := 2; i < *namelen; i++ {
 		if (*name)[i] == vr.variable {
-			return errors.New("varouter: invalid variable name")
+			return fmt.Errorf("%w: invalid variable name", ErrRegister)
 		}
 	}
 	return nil
